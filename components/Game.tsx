@@ -1,19 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { GameState, BottleData } from '../types';
-import { INITIAL_COINS, MAX_CAPACITY, COST_SHUFFLE } from '../constants';
-import { generateLevel, canPour, pourLiquid, checkLevelComplete, shuffleBottles } from '../services/gameLogic';
+import { INITIAL_COINS, MAX_CAPACITY, COST_SHUFFLE, COST_REVEAL, COST_ADD_BOTTLE, COST_UNDO } from '../constants';
+import { generateLevel, canPour, pourLiquid, checkLevelComplete, shuffleBottles, revealHiddenLayers } from '../services/gameLogic';
 import { Bottle } from './Bottle';
 import { TopBar } from './TopBar';
 import { TargetArea } from './TargetArea';
 import { BottomControls } from './BottomControls';
 import { useNavigate } from 'react-router-dom';
-
-// Sound effects (dummy functions for now)
-const playPop = () => {};
-const playPour = () => {};
-const playWin = () => {};
-const playCap = () => {}; 
-const playShuffle = () => {}; 
+import { sounds } from '../utils/sound';
 
 export default function Game() {
   const navigate = useNavigate();
@@ -60,7 +54,7 @@ export default function Game() {
 
     if (match) {
         setProcessingMatch(match);
-        playWin(); 
+        setTimeout(() => sounds.win(), 100); // Play win/success sound
     }
   }, [gameState.bottles, gameState.orders, gameState.isWin, processingMatch]);
 
@@ -137,6 +131,7 @@ export default function Game() {
   };
 
   const handleNextLevel = () => {
+      sounds.pop();
       const nextLevel = gameState.level + 1;
       setGameState(prev => ({ ...prev, level: nextLevel })); // Update state logic
       startLevel(nextLevel); // Regenerate board
@@ -152,11 +147,12 @@ export default function Game() {
         const bottle = bottles.find(b => b.id === bottleId);
         if (!bottle || bottle.layers.length === 0 || bottle.isCompleted) return prev;
         
-        playPop();
+        sounds.pop();
         return { ...prev, selectedBottleId: bottleId };
       }
 
       if (selectedBottleId === bottleId) {
+        sounds.pop();
         return { ...prev, selectedBottleId: null };
       }
 
@@ -176,7 +172,7 @@ export default function Game() {
         const newHistory = [...prev.history, historySnapshot];
         
         const { newSource, newTarget } = pourLiquid(source, target);
-        playPour();
+        sounds.pour();
 
         let currentBottles = [...bottles];
         currentBottles[sourceIndex] = newSource;
@@ -186,7 +182,7 @@ export default function Game() {
         if (isTargetNewlyCompleted) {
              const match = findMatch(currentBottles, orders);
              if (!match) {
-                 playCap();
+                 sounds.pop(); // Cap sound
              }
         }
 
@@ -202,9 +198,10 @@ export default function Game() {
       } else {
         const targetBottle = bottles[targetIndex];
         if (!targetBottle.isCompleted && targetBottle.layers.length > 0) {
-             playPop();
+             sounds.pop();
              return { ...prev, selectedBottleId: bottleId };
         }
+        sounds.error();
         return { ...prev, selectedBottleId: null };
       }
     });
@@ -213,13 +210,22 @@ export default function Game() {
   const handleUndo = () => {
     if (processingMatch) return;
     setGameState(prev => {
-      if (prev.history.length === 0 || prev.coins < 50) return prev; 
+      if (prev.history.length === 0) {
+          sounds.error();
+          return prev;
+      }
+      if (prev.coins < COST_UNDO) {
+          sounds.error();
+          return prev;
+      }
+
+      sounds.pop();
       const previousState = prev.history[prev.history.length - 1];
       const newHistory = prev.history.slice(0, -1);
       
       return {
         ...prev,
-        coins: prev.coins - 50,
+        coins: prev.coins - COST_UNDO,
         bottles: previousState.bottles,
         orders: previousState.orders,
         selectedBottleId: null,
@@ -231,7 +237,11 @@ export default function Game() {
   const handleAddBottle = () => {
      if (processingMatch) return;
      setGameState(prev => {
-         if (prev.coins < 200) return prev;
+         if (prev.coins < COST_ADD_BOTTLE) {
+             sounds.error();
+             return prev;
+         }
+         sounds.magic();
          const newBottle: BottleData = {
              id: Math.random().toString(),
              layers: [],
@@ -240,7 +250,7 @@ export default function Game() {
          };
          return {
              ...prev,
-             coins: prev.coins - 200,
+             coins: prev.coins - COST_ADD_BOTTLE,
              bottles: [...prev.bottles, newBottle]
          };
      });
@@ -251,6 +261,7 @@ export default function Game() {
       
       setGameState(prev => {
         if (prev.coins < COST_SHUFFLE) {
+           sounds.error();
            return prev;
         }
 
@@ -261,7 +272,7 @@ export default function Game() {
         const newHistory = [...prev.history, historySnapshot];
 
         const shuffledBottles = shuffleBottles(prev.bottles);
-        playShuffle();
+        sounds.magic();
 
         return {
             ...prev,
@@ -271,6 +282,34 @@ export default function Game() {
             history: newHistory
         };
       });
+  };
+
+  const handleReveal = () => {
+    if (processingMatch) return;
+
+    setGameState(prev => {
+        if (prev.coins < COST_REVEAL) {
+            sounds.error();
+            return prev;
+        }
+
+        const historySnapshot = {
+            bottles: JSON.parse(JSON.stringify(prev.bottles)),
+            orders: JSON.parse(JSON.stringify(prev.orders))
+        };
+        const newHistory = [...prev.history, historySnapshot];
+
+        const revealedBottles = revealHiddenLayers(prev.bottles);
+        sounds.magic();
+
+        return {
+            ...prev,
+            coins: prev.coins - COST_REVEAL,
+            bottles: revealedBottles,
+            selectedBottleId: null,
+            history: newHistory
+        }
+    });
   };
 
   return (
@@ -321,7 +360,7 @@ export default function Game() {
             onUndo={handleUndo} 
             onShuffle={handleShuffle} 
             onAddBottle={handleAddBottle}
-            onClear={() => {}}
+            onReveal={handleReveal}
         />
 
         {gameState.isWin && (

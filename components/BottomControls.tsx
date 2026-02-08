@@ -1,12 +1,12 @@
 import React from 'react';
-import { RotateCcw, Shuffle, Plus, PaintBucket } from 'lucide-react';
-import { COST_ADD_BOTTLE, COST_CLEAR, COST_SHUFFLE, COST_UNDO } from '../constants';
+import { RotateCcw, Shuffle, Plus, Eye } from 'lucide-react';
+import { COST_ADD_BOTTLE, COST_REVEAL, COST_SHUFFLE, COST_UNDO } from '../constants';
 
 interface BottomControlsProps {
   onShuffle: () => void;
   onUndo: () => void;
   onAddBottle: () => void;
-  onClear: () => void;
+  onReveal: () => void;
 }
 
 const ControlButton: React.FC<{ 
@@ -42,7 +42,7 @@ const ControlButton: React.FC<{
   </div>
 );
 
-export const BottomControls: React.FC<BottomControlsProps> = ({ onShuffle, onUndo, onAddBottle, onClear }) => {
+export const BottomControls: React.FC<BottomControlsProps> = ({ onShuffle, onUndo, onAddBottle, onReveal }) => {
   return (
     <div className="w-full px-4 pb-6 pt-2 flex justify-between items-center max-w-lg mx-auto">
       <ControlButton 
@@ -67,11 +67,11 @@ export const BottomControls: React.FC<BottomControlsProps> = ({ onShuffle, onUnd
         label="Add"
       />
       <ControlButton 
-        onClick={onClear} 
-        icon={<PaintBucket size={28} strokeWidth={2.5} />} 
+        onClick={onReveal} 
+        icon={<Eye size={28} strokeWidth={2.5} />} 
         colorClass="bg-purple-500" 
-        cost={COST_CLEAR} 
-        label="Clear"
+        cost={COST_REVEAL} 
+        label="Reveal"
       />
     </div>
   );

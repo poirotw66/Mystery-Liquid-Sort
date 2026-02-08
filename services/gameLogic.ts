@@ -81,6 +81,32 @@ export const pourLiquid = (
 };
 
 /**
+ * Reveals all hidden layers in all bottles and recalculates completion status
+ */
+export const revealHiddenLayers = (bottles: BottleData[]): BottleData[] => {
+    return bottles.map(bottle => {
+        const newLayers = bottle.layers.map(layer => ({
+            ...layer,
+            isHidden: false
+        }));
+
+        // CRITICAL FIX: Recalculate isCompleted status
+        // If a bottle becomes uniform and full after reveal, it must be marked completed
+        // so the game loop can pick it up for the order animation.
+        const isCompleted = 
+            newLayers.length === bottle.capacity && 
+            newLayers.length > 0 &&
+            newLayers.every(l => l.color === newLayers[0].color);
+
+        return {
+            ...bottle,
+            layers: newLayers,
+            isCompleted
+        };
+    });
+};
+
+/**
  * Shuffles the liquids in incomplete bottles.
  */
 export const shuffleBottles = (bottles: BottleData[]): BottleData[] => {
@@ -138,7 +164,18 @@ export const shuffleBottles = (bottles: BottleData[]): BottleData[] => {
   // 6. Merge back into the original array order
   return bottles.map(b => {
       if (b.isCompleted) return b;
+      
       const updated = newBottleStates.find(nb => nb.id === b.id);
+      
+      // Also verify isCompleted for shuffled bottles (in rare case RNG solves it)
+      if (updated) {
+          const isCompleted = 
+            updated.layers.length === updated.capacity && 
+            updated.layers.every(l => l.color === updated.layers[0].color && !l.isHidden);
+            
+          return { ...updated, isCompleted };
+      }
+
       return updated || b;
   });
 };
@@ -237,6 +274,19 @@ export const generateLevel = (level: number): { bottles: BottleData[], orders: O
     if (b.layers.length > 0) {
       b.layers[b.layers.length - 1].isHidden = false;
     }
+  });
+
+  // NEW: Final Pass to determine isCompleted state immediately after generation
+  // This catches cases where RNG accidentally solves a bottle at the start.
+  bottles.forEach(b => {
+      if (b.layers.length === b.capacity) {
+          const firstColor = b.layers[0].color;
+          // Check if all layers are same color AND not hidden
+          const allSame = b.layers.every(l => l.color === firstColor && !l.isHidden);
+          if (allSame) {
+              b.isCompleted = true;
+          }
+      }
   });
 
   return { bottles, orders };
