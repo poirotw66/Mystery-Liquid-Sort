@@ -144,21 +144,45 @@ export const shuffleBottles = (bottles: BottleData[]): BottleData[] => {
 };
 
 /**
- * Generates a level and corresponding orders.
+ * Generates a level with progressive difficulty.
  */
 export const generateLevel = (level: number): { bottles: BottleData[], orders: Order[] } => {
-  const numColors = Math.min(3 + Math.floor(level / 2), LEVEL_COLORS.length);
-  const numEmpty = 2;
+  
+  // 1. Difficulty Logic: Number of Colors
+  // Lvl 1-2: 3 colors
+  // Lvl 3-5: 4 colors
+  // Lvl 6-9: 5 colors
+  // Lvl 10+: 6 colors...
+  let numColors = 3;
+  if (level >= 3) numColors = 4;
+  if (level >= 6) numColors = 5;
+  if (level >= 10) numColors = 6;
+  if (level >= 15) numColors = 7;
+  
+  // Cap at max available colors
+  numColors = Math.min(numColors, LEVEL_COLORS.length);
+
+  // 2. Difficulty Logic: Hidden Layers Probability
+  // Lvl 1: 0% hidden (Tutorial phase)
+  // Lvl 2: 20%
+  // Lvl 3+: Grows up to 50%
+  let hiddenProbability = 0;
+  if (level > 1) {
+    hiddenProbability = Math.min(0.5, 0.2 + (level - 2) * 0.05);
+  }
+
+  const numEmpty = 2; // Keep at 2 for solvable seeds generally
   
   const activeColors = LEVEL_COLORS.slice(0, numColors);
   let allLayers: Layer[] = [];
 
-  // Create orders based on active colors.
+  // Create orders
+  // Logic: First 2 orders always unlocked. Subsequent orders locked based on difficulty.
   const orders: Order[] = activeColors.map((color, index) => ({
     id: uid(),
     color: color,
     isCompleted: false,
-    isLocked: index >= 2 // True if index is 2, 3, 4... (0 and 1 are unlocked)
+    isLocked: index >= 2 // Simple lock logic: Index 0 and 1 are free, others locked
   }));
 
   // Create 4 layers for each color
@@ -184,8 +208,13 @@ export const generateLevel = (level: number): { bottles: BottleData[], orders: O
       for (let j = 0; j < MAX_CAPACITY; j++) {
         if (layerIndex < allLayers.length) {
           const layer = allLayers[layerIndex++];
-          // Mark lower layers as hidden logic
-          if (j < 3 && Math.random() > 0.4) {
+          
+          // Apply Hidden Logic
+          // Rule: Topmost layer (index 3) is never initially hidden for fairness
+          // Rule: Bottom layers have chance to be hidden
+          const isTopLayer = j === 3; 
+          
+          if (!isTopLayer && Math.random() < hiddenProbability) {
             layer.isHidden = true;
           } else {
             layer.isHidden = false;
@@ -203,7 +232,7 @@ export const generateLevel = (level: number): { bottles: BottleData[], orders: O
     });
   }
 
-  // Ensure top layers are never hidden
+  // Double check: Ensure visual top layers are revealed (in case logic above missed something)
   bottles.forEach(b => {
     if (b.layers.length > 0) {
       b.layers[b.layers.length - 1].isHidden = false;
