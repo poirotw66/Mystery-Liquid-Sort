@@ -5,11 +5,12 @@ import { MAX_CAPACITY } from '../constants';
 interface BottleProps {
   bottle: BottleData;
   isSelected: boolean;
+  isValidTarget?: boolean; // New prop for smart highlighting
   isFlying?: boolean;
   onClick: () => void;
 }
 
-export const Bottle: React.FC<BottleProps> = ({ bottle, isSelected, isFlying = false, onClick }) => {
+export const Bottle: React.FC<BottleProps> = ({ bottle, isSelected, isValidTarget = false, isFlying = false, onClick }) => {
   const layerHeight = 100 / MAX_CAPACITY;
   
   const isCapped = bottle.isCompleted;
@@ -19,11 +20,18 @@ export const Bottle: React.FC<BottleProps> = ({ bottle, isSelected, isFlying = f
       onClick={isCapped ? undefined : onClick}
       className={`
         relative flex flex-col items-center justify-end
-        transition-all duration-700 ease-in-out
+        transition-all duration-300 ease-in-out
         ${isFlying ? 'z-50 pointer-events-none' : ''}
         ${isCapped && !isFlying ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}
-        ${isSelected && !isCapped && !isFlying ? '-translate-y-8 scale-105 drop-shadow-[0_20px_20px_rgba(0,0,0,0.5)]' : ''}
-        ${!isSelected && !isCapped && !isFlying ? 'hover:-translate-y-2 hover:drop-shadow-lg' : ''}
+        
+        /* Selected State */
+        ${isSelected && !isCapped && !isFlying ? '-translate-y-6 scale-105 drop-shadow-[0_20px_20px_rgba(0,0,0,0.5)]' : ''}
+        
+        /* Valid Target Hint (Pulsing Green Glow) */
+        ${isValidTarget && !isSelected ? 'ring-4 ring-emerald-400/60 ring-offset-4 ring-offset-[#1a1a2e] scale-[1.02]' : ''}
+
+        /* Hover State (only if not selected and not flying) */
+        ${!isSelected && !isCapped && !isFlying && !isValidTarget ? 'hover:-translate-y-2 hover:drop-shadow-lg' : ''}
       `}
       style={{ 
         width: '64px', 
@@ -38,6 +46,13 @@ export const Bottle: React.FC<BottleProps> = ({ bottle, isSelected, isFlying = f
         <div className="absolute -top-12 animate-bounce flex flex-col items-center z-50">
           <div className="w-4 h-4 bg-yellow-400 rounded-full shadow-[0_0_10px_#facc15]"></div>
           <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[10px] border-t-yellow-400 mt-1"></div>
+        </div>
+      )}
+
+      {/* Valid Target Indicator (Arrow) */}
+      {isValidTarget && (
+        <div className="absolute -top-10 animate-bounce flex flex-col items-center z-50 opacity-80">
+           <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[10px] border-t-emerald-400"></div>
         </div>
       )}
 
@@ -59,11 +74,12 @@ export const Bottle: React.FC<BottleProps> = ({ bottle, isSelected, isFlying = f
 
       {/* --- GLASS BOTTLE CONTAINER --- */}
       <div 
-        className="
+        className={`
           relative w-full h-full overflow-hidden flex flex-col-reverse shadow-2xl backdrop-blur-sm z-10
-          rounded-b-[2.5rem] rounded-t-lg border-[3px] border-white/20 bg-white/5 
-          ring-1 ring-black/10
-        "
+          rounded-b-[2.5rem] rounded-t-lg border-[3px] bg-white/5 
+          transition-colors duration-300
+          ${isValidTarget ? 'border-emerald-400/50' : 'border-white/20'}
+        `}
       >
         {/* LAYERS */}
         {bottle.layers.map((layer) => (
@@ -114,8 +130,6 @@ export const Bottle: React.FC<BottleProps> = ({ bottle, isSelected, isFlying = f
       {/* --- GLASS REFLECTIONS (Skeuomorphic touches) --- */}
       {/* Main left reflection */}
       <div className="absolute top-2 left-2 w-2 h-[92%] bg-gradient-to-b from-white/40 via-white/10 to-transparent rounded-full pointer-events-none z-20 blur-[2px]"></div>
-      {/* Sharp white line on left */}
-      <div className="absolute top-3 left-3 w-[2px] h-[30%] bg-white/60 rounded-full pointer-events-none z-20"></div>
       
       {/* Right rim highlight */}
       <div className="absolute top-2 right-1.5 w-1 h-[92%] bg-gradient-to-b from-white/20 to-transparent rounded-full pointer-events-none z-20 blur-[1px]"></div>

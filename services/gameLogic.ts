@@ -14,6 +14,7 @@ export const createLayer = (color: Color, isHidden: boolean = false): Layer => (
  * Checks if a move is valid.
  */
 export const canPour = (source: BottleData, target: BottleData): boolean => {
+  if (source.id === target.id) return false;
   if (source.layers.length === 0) return false; // Source empty
   if (target.isCompleted) return false; // Cannot pour into a completed/capped bottle
   if (target.layers.length >= target.capacity) return false; // Target full
@@ -90,9 +91,6 @@ export const revealHiddenLayers = (bottles: BottleData[]): BottleData[] => {
             isHidden: false
         }));
 
-        // CRITICAL FIX: Recalculate isCompleted status
-        // If a bottle becomes uniform and full after reveal, it must be marked completed
-        // so the game loop can pick it up for the order animation.
         const isCompleted = 
             newLayers.length === bottle.capacity && 
             newLayers.length > 0 &&
@@ -125,49 +123,39 @@ export const shuffleBottles = (bottles: BottleData[]): BottleData[] => {
   }
 
   // 3. Clear the incomplete bottles to prepare for refill
-  // We create a map for easy updates, preserving the bottle objects
   const newBottleStates = incompleteBottles.map(b => ({
     ...b,
     layers: [] as Layer[]
   }));
 
   // 4. Distribute layers randomly into available space
-  // This helps avoid creating a trivial state where everything is sorted or blocked
+  // Logic: Randomly pick a valid bottle for each layer
   for (const layer of allLayers) {
-      // Find bottles that still have space
       const validBottles = newBottleStates.filter(b => b.layers.length < b.capacity);
       
       if (validBottles.length > 0) {
         const randomBottle = validBottles[Math.floor(Math.random() * validBottles.length)];
         randomBottle.layers.push(layer);
-      } else {
-        // Should not happen if total capacity >= total layers
-        console.warn("Not enough space to put back shuffled layers!");
       }
   }
 
-  // 5. Update visibility (Top layer always visible, others chance to be hidden)
+  // 5. Update visibility
   newBottleStates.forEach(b => {
        b.layers.forEach((l, idx) => {
-          // Top layer is always visible
           if (idx === b.layers.length - 1) {
               l.isHidden = false;
           } else {
-              // 40% chance to be hidden for lower layers to maintain "Mystery"
-              // Or you could make them all visible to reward the player. 
-              // Let's keep the game mechanic:
               l.isHidden = Math.random() < 0.4;
           }
        });
   });
 
-  // 6. Merge back into the original array order
+  // 6. Merge back
   return bottles.map(b => {
       if (b.isCompleted) return b;
       
       const updated = newBottleStates.find(nb => nb.id === b.id);
       
-      // Also verify isCompleted for shuffled bottles (in rare case RNG solves it)
       if (updated) {
           const isCompleted = 
             updated.layers.length === updated.capacity && 
@@ -181,118 +169,279 @@ export const shuffleBottles = (bottles: BottleData[]): BottleData[] => {
 };
 
 /**
- * Generates a level with progressive difficulty.
+ * Generates a string hash representing the current bottle configuration.
+ * Used to detect loops (repeated states).
  */
-export const generateLevel = (level: number): { bottles: BottleData[], orders: Order[] } => {
-  
-  // 1. Difficulty Logic: Number of Colors
-  // Lvl 1-2: 3 colors
-  // Lvl 3-5: 4 colors
-  // Lvl 6-9: 5 colors
-  // Lvl 10+: 6 colors...
-  let numColors = 3;
-  if (level >= 3) numColors = 4;
-  if (level >= 6) numColors = 5;
-  if (level >= 10) numColors = 6;
-  if (level >= 15) numColors = 7;
-  
-  // Cap at max available colors
-  numColors = Math.min(numColors, LEVEL_COLORS.length);
+export const getGameStateHash = (bottles: BottleData[]): string => {
+  // Sort to ensure bottle order in array doesn't affect hash
+  // (though bottle IDs are static, sorting ensures robustness)
+  return bottles
+    .slice() // Clone before sort
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map(b => {
+      // Create a string for each bottle: "ID:[Color-Hidden,Color-Visible...]"
+      const layersStr = b.layers
+        .map(l => `${l.color}-${l.isHidden ? 'h' : 'v'}`)
+        .join(',');
+      return `${b.id}:[${layersStr}]`;
+    })
+    .join('|');
+};
 
-  // 2. Difficulty Logic: Hidden Layers Probability
-  // Lvl 1: 0% hidden (Tutorial phase)
-  // Lvl 2: 20%
-  // Lvl 3+: Grows up to 50%
-  let hiddenProbability = 0;
-  if (level > 1) {
-    hiddenProbability = Math.min(0.5, 0.2 + (level - 2) * 0.05);
-  }
-
-  const numEmpty = 2; // Keep at 2 for solvable seeds generally
-  
-  const activeColors = LEVEL_COLORS.slice(0, numColors);
-  let allLayers: Layer[] = [];
-
-  // Create orders
-  // Logic: First 2 orders always unlocked. Subsequent orders locked based on difficulty.
-  const orders: Order[] = activeColors.map((color, index) => ({
-    id: uid(),
-    color: color,
-    isCompleted: false,
-    isLocked: index >= 2 // Simple lock logic: Index 0 and 1 are free, others locked
-  }));
-
-  // Create 4 layers for each color
-  activeColors.forEach(color => {
-    for (let i = 0; i < MAX_CAPACITY; i++) {
-      allLayers.push(createLayer(color, false));
-    }
-  });
-
-  // Shuffle layers
-  allLayers = allLayers.sort(() => Math.random() - 0.5);
-
-  const bottles: BottleData[] = [];
-  const totalBottles = numColors + numEmpty;
-
-  // Distribute layers into bottles
-  let layerIndex = 0;
-  for (let i = 0; i < totalBottles; i++) {
-    const isEmptyBottle = i >= numColors;
-    const layers: Layer[] = [];
+/**
+ * Get all theoretically valid moves from a specific state
+ */
+const getValidMoves = (bottles: BottleData[]) => {
+    const moves: {source: BottleData, target: BottleData}[] = [];
+    const active = bottles.filter(b => !b.isCompleted);
+    const nonEmpty = active.filter(b => b.layers.length > 0);
     
-    if (!isEmptyBottle) {
-      for (let j = 0; j < MAX_CAPACITY; j++) {
-        if (layerIndex < allLayers.length) {
-          const layer = allLayers[layerIndex++];
+    for (const s of nonEmpty) {
+          // Cannot pour if top is hidden
+          if (s.layers[s.layers.length-1].isHidden) continue;
           
-          // Apply Hidden Logic
-          // Rule: Topmost layer (index 3) is never initially hidden for fairness
-          // Rule: Bottom layers have chance to be hidden
-          const isTopLayer = j === 3; 
-          
-          if (!isTopLayer && Math.random() < hiddenProbability) {
-            layer.isHidden = true;
-          } else {
-            layer.isHidden = false;
+          for (const t of active) {
+              if (s.id === t.id) continue;
+              if (canPour(s, t)) moves.push({source: s, target: t});
           }
-          layers.push(layer);
+    }
+    return moves;
+};
+
+/**
+ * Checks if there are any valid moves remaining.
+ * Now includes a lookahead to detect forced loops (Back-and-Forth deadlocks).
+ */
+export const checkDeadlock = (bottles: BottleData[], history: { bottles: BottleData[] }[] = []): boolean => {
+  // 1. Get immediate valid moves
+  const currentMoves = getValidMoves(bottles);
+  if (currentMoves.length === 0) return true; // Strict deadlock (no moves physically possible)
+
+  // 2. Prepare History Hashes (including current state)
+  const currentHash = getGameStateHash(bottles);
+  const historyHashes = new Set(history.map(h => getGameStateHash(h.bottles)));
+  historyHashes.add(currentHash);
+
+  // 3. Lookahead Simulation (Is there at least ONE move that leads to a viable future?)
+  const hasViablePath = currentMoves.some(move => {
+      // A. Simulate the immediate move (Current -> Next)
+      const { newSource, newTarget } = pourLiquid(move.source, move.target);
+      
+      const nextStateBottles = bottles.map(b => {
+          if (b.id === newSource.id) return newSource;
+          if (b.id === newTarget.id) return newTarget;
+          return b;
+      });
+
+      // B. Check if Next State is a known past state (Immediate Loop)
+      const nextHash = getGameStateHash(nextStateBottles);
+      if (historyHashes.has(nextHash)) return false; // This move creates a loop, not viable
+
+      // C. Check if Next State is a Dead End
+      const nextMoves = getValidMoves(nextStateBottles);
+      if (nextMoves.length === 0) {
+          // Only exception: If the next state wins the game, it's valid!
+          const isWin = nextStateBottles.every(b => b.isCompleted || b.layers.length === 0);
+          return isWin; 
+      }
+
+      // D. Deep Check: Do ALL moves from Next State lead back to history? (The "Back and Forth" trap)
+      // We check if "Next State" only allows moves that return to "Current State" (or other past states)
+      const movesFromNextAreAllLoops = nextMoves.every(nextMove => {
+          const { newSource: deepSource, newTarget: deepTarget } = pourLiquid(nextMove.source, nextMove.target);
+          const deepStateBottles = nextStateBottles.map(b => {
+              if (b.id === deepSource.id) return deepSource;
+              if (b.id === deepTarget.id) return deepTarget;
+              return b;
+          });
+          const deepHash = getGameStateHash(deepStateBottles);
+          return historyHashes.has(deepHash);
+      });
+
+      if (movesFromNextAreAllLoops) return false; // Next state is a trap (forced loop)
+
+      // If we passed all checks, this move is viable
+      return true;
+  });
+
+  return !hasViablePath;
+};
+
+/**
+ * Checks if the current bottle state exists in the history stack.
+ */
+export const checkStateRepetition = (currentBottles: BottleData[], history: { bottles: BottleData[] }[]): boolean => {
+    if (history.length === 0) return false;
+    
+    const currentHash = getGameStateHash(currentBottles);
+    
+    // Check if this hash exists in history
+    for (let i = history.length - 1; i >= 0; i--) {
+        if (getGameStateHash(history[i].bottles) === currentHash) {
+            return true;
         }
-      }
     }
+    return false;
+};
 
-    bottles.push({
-      id: uid(),
-      layers,
-      capacity: MAX_CAPACITY,
-      isCompleted: false,
+// --- NEW GENERATION LOGIC ---
+
+/**
+ * Creates the initial solved state for generation.
+ */
+const createSolvedState = (numColors: number, extraBottles: number) => {
+    const activeColors = LEVEL_COLORS.slice(0, numColors);
+    const bottles: BottleData[] = [];
+    
+    // Create Full Bottles
+    activeColors.forEach(color => {
+        const layers: Layer[] = [];
+        for (let i = 0; i < MAX_CAPACITY; i++) {
+            layers.push(createLayer(color, false));
+        }
+        bottles.push({
+            id: uid(),
+            layers,
+            capacity: MAX_CAPACITY,
+            isCompleted: true // Initially completed
+        });
     });
-  }
 
-  // Double check: Ensure visual top layers are revealed (in case logic above missed something)
-  bottles.forEach(b => {
-    if (b.layers.length > 0) {
-      b.layers[b.layers.length - 1].isHidden = false;
+    // Create Empty Bottles
+    for (let i = 0; i < extraBottles; i++) {
+        bottles.push({
+            id: uid(),
+            layers: [],
+            capacity: MAX_CAPACITY,
+            isCompleted: false
+        });
     }
-  });
 
-  // NEW: Final Pass to determine isCompleted state immediately after generation
-  // This catches cases where RNG accidentally solves a bottle at the start.
-  bottles.forEach(b => {
-      if (b.layers.length === b.capacity) {
-          const firstColor = b.layers[0].color;
-          // Check if all layers are same color AND not hidden
-          const allSame = b.layers.every(l => l.color === firstColor && !l.isHidden);
-          if (allSame) {
-              b.isCompleted = true;
-          }
-      }
-  });
+    return { bottles, activeColors };
+};
 
-  return { bottles, orders };
+/**
+ * Checks if taking the top layer from `bottle` is a valid "Reverse Move".
+ * Valid if the bottle is "pure" at the top (removing top doesn't expose a mismatch).
+ * This guarantees that in the forward game, putting the layer BACK is a valid move.
+ */
+const isValidScrambleSource = (bottle: BottleData): boolean => {
+    if (bottle.layers.length === 0) return false;
+    // If only 1 layer, removing it leaves empty. Valid forward target.
+    if (bottle.layers.length === 1) return true;
+    
+    const top = bottle.layers[bottle.layers.length - 1];
+    const below = bottle.layers[bottle.layers.length - 2];
+    
+    // If top color matches below color, removing top leaves a matching color. Valid forward target.
+    return top.color === below.color;
+};
+
+export const generateLevel = (level: number): { bottles: BottleData[], orders: Order[] } => {
+    // 1. Difficulty Config
+    let numColors = 3;
+    if (level >= 3) numColors = 4;
+    if (level >= 6) numColors = 5;
+    if (level >= 10) numColors = 6;
+    if (level >= 15) numColors = 7;
+    numColors = Math.min(numColors, LEVEL_COLORS.length);
+
+    let extraBottles = 2;
+    if (level >= 4) extraBottles = 1;
+
+    // Steps increase with difficulty to mix more thoroughly
+    const scrambleSteps = 25 + (level * 6); 
+
+    // Hidden Probability
+    let hiddenProbability = 0;
+    if (level > 1) {
+        hiddenProbability = Math.min(0.5, 0.2 + (level - 2) * 0.05);
+    }
+
+    // 2. Init Solved State
+    let { bottles, activeColors } = createSolvedState(numColors, extraBottles);
+
+    // 3. Random Walk Scramble (Reverse Generation)
+    let lastSourceId: string | null = null;
+
+    for (let i = 0; i < scrambleSteps; i++) {
+        // Find all valid moves for this step
+        const validMoves: { sourceIndex: number, targetIndex: number }[] = [];
+
+        bottles.forEach((source, sIdx) => {
+            // Rule: We can only pick a layer from a stack if it doesn't break color continuity
+            if (!isValidScrambleSource(source)) return;
+
+            bottles.forEach((target, tIdx) => {
+                if (sIdx === tIdx) return;
+                if (target.layers.length >= target.capacity) return;
+                
+                // Heuristic: Avoid immediately moving back to where we just came from
+                // to promote better mixing, but allow it if it's the only option.
+                if (lastSourceId && source.id === lastSourceId && Math.random() < 0.8) {
+                     return;
+                }
+                
+                validMoves.push({ sourceIndex: sIdx, targetIndex: tIdx });
+            });
+        });
+
+        if (validMoves.length === 0) break; 
+
+        // Pick random move
+        const move = validMoves[Math.floor(Math.random() * validMoves.length)];
+        const source = bottles[move.sourceIndex];
+        const target = bottles[move.targetIndex];
+
+        // Execute Move (Move 1 layer at a time for maximum entropy)
+        const layer = source.layers.pop()!;
+        target.layers.push(layer);
+        
+        // Mark as incomplete since we touched them
+        source.isCompleted = false; 
+        target.isCompleted = false; 
+
+        // The target of this scramble move becomes the 'source' if we were to reverse (solve) it immediately
+        lastSourceId = target.id; 
+    }
+
+    // 4. Post-Process
+    // Apply Hidden Layers & Final completion check
+    bottles.forEach(b => {
+        b.layers.forEach((l, idx) => {
+             // Never hide top layer
+             if (idx === b.layers.length - 1) {
+                 l.isHidden = false;
+                 return;
+             }
+             if (Math.random() < hiddenProbability) {
+                 l.isHidden = true;
+             } else {
+                 l.isHidden = false;
+             }
+        });
+        
+        // Recalculate isCompleted logic properly
+        if (b.layers.length === b.capacity && b.layers.length > 0) {
+            const color = b.layers[0].color;
+            b.isCompleted = b.layers.every(l => l.color === color && !l.isHidden);
+        } else {
+            b.isCompleted = false;
+        }
+    });
+
+    // Create Orders based on active colors
+    const orders: Order[] = activeColors.map((color, index) => ({
+        id: uid(),
+        color: color,
+        // If the RNG accidentally left a bottle solved, mark order as done
+        isCompleted: bottles.some(b => b.isCompleted && b.layers[0].color === color),
+        isLocked: index >= 2
+    }));
+    
+    return { bottles, orders };
 };
 
 export const checkLevelComplete = (bottles: BottleData[], orders: Order[]) => {
-    // Win condition: All orders are completed.
     return orders.every(o => o.isCompleted);
 };

@@ -1,24 +1,43 @@
-import React, { useState, useEffect } from 'react';
-import { GameState, BottleData } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { GameState, BottleData, GameMode, DailyMission, MissionType } from '../types';
 import { INITIAL_COINS, MAX_CAPACITY, COST_SHUFFLE, COST_REVEAL, COST_ADD_BOTTLE, COST_UNDO } from '../constants';
-import { generateLevel, canPour, pourLiquid, checkLevelComplete, shuffleBottles, revealHiddenLayers } from '../services/gameLogic';
+import { generateLevel, canPour, pourLiquid, checkLevelComplete, shuffleBottles, revealHiddenLayers, checkDeadlock, checkStateRepetition } from '../services/gameLogic';
+import { loadDailyMissions, saveDailyMissions, updateMissionProgress, hasUnclaimedRewards } from '../services/missionService';
 import { Bottle } from './Bottle';
 import { TopBar } from './TopBar';
 import { TargetArea } from './TargetArea';
 import { BottomControls } from './BottomControls';
-import { useNavigate } from 'react-router-dom';
+import { DailyMissions } from './DailyMissions';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { sounds } from '../utils/sound';
+import { AlertTriangle, Home, RotateCcw, Repeat, ClipboardList } from 'lucide-react';
 
 export default function Game() {
   const navigate = useNavigate();
+  const location = useLocation();
   
-  // Initialize state with localStorage check for level and coins
+  // Extract initial params from navigation state
+  const initialMode: GameMode = location.state?.mode || 'adventure';
+  const initialDifficulty = location.state?.difficultyLevel || 1;
+  const initialDifficultyLabel = location.state?.difficultyLabel || 'CUSTOM';
+
+  // Initialize state
   const [gameState, setGameState] = useState<GameState>(() => {
-    const savedLevel = localStorage.getItem('mls_level');
+    // Determine level: if adventure, load from storage. If quick play, use passed prop.
+    let startLevel = 1;
+    if (initialMode === 'adventure') {
+        const savedLevel = localStorage.getItem('mls_level');
+        startLevel = savedLevel ? parseInt(savedLevel, 10) : 1;
+    } else {
+        startLevel = initialDifficulty;
+    }
+
     const savedCoins = localStorage.getItem('mls_coins');
     
     return {
-      level: savedLevel ? parseInt(savedLevel, 10) : 1, // Start from Level 1
+      mode: initialMode,
+      level: startLevel,
+      difficultyLabel: initialMode === 'quick_play' ? initialDifficultyLabel : undefined,
       coins: savedCoins ? parseInt(savedCoins, 10) : INITIAL_COINS,
       bottles: [],
       orders: [],
@@ -28,23 +47,98 @@ export default function Game() {
     };
   });
 
-  // Save coins whenever they change
+  // --- Daily Missions State ---
+  const [missions, setMissions] = useState<DailyMission[]>(() => loadDailyMissions());
+  const [showMissionModal, setShowMissionModal] = useState(false);
+  const hasNotifications = useMemo(() => hasUnclaimedRewards(missions), [missions]);
+
+  // Intelligent Warning System
+  const [warningState, setWarningState] = useState<{ type: 'deadlock' | 'loop' | null, message: string }>({ type: null, message: '' });
+
+  // Save coins whenever they change (shared across modes)
   useEffect(() => {
     localStorage.setItem('mls_coins', gameState.coins.toString());
   }, [gameState.coins]);
 
-  // Save level whenever it changes
+  // Save level ONLY if in ADVENTURE mode
   useEffect(() => {
-    localStorage.setItem('mls_level', gameState.level.toString());
-  }, [gameState.level]);
+    if (gameState.mode === 'adventure') {
+        localStorage.setItem('mls_level', gameState.level.toString());
+    }
+  }, [gameState.level, gameState.mode]);
 
   // State to track the specific match being processed { bottleId, orderIndex }
   const [processingMatch, setProcessingMatch] = useState<{ bottleId: string; orderIndex: number } | null>(null);
 
   useEffect(() => {
+    // Generate the initial level data based on the state level/difficulty
     startLevel(gameState.level);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount, startLevel will handle re-generations when called manually
+  }, []); 
+
+  // --- Helper to update missions from game events ---
+  const trackMissionProgress = (type: MissionType) => {
+      setMissions(prev => updateMissionProgress(prev, type));
+  };
+
+  const handleClaimMission = (missionId: string) => {
+      setMissions(prev => {
+          const updated = prev.map(m => {
+              if (m.id === missionId && !m.isClaimed && m.progress >= m.target) {
+                  // Add coins
+                  setGameState(gs => ({...gs, coins: gs.coins + m.reward}));
+                  return { ...m, isClaimed: true };
+              }
+              return m;
+          });
+          saveDailyMissions(updated);
+          return updated;
+      });
+  };
+
+  // --- CALCULATE VALID TARGETS ---
+  const validTargets = useMemo(() => {
+      if (!gameState.selectedBottleId) return new Set<string>();
+
+      const source = gameState.bottles.find(b => b.id === gameState.selectedBottleId);
+      if (!source) return new Set<string>();
+
+      const targets = new Set<string>();
+      gameState.bottles.forEach(target => {
+          if (canPour(source, target)) {
+              targets.add(target.id);
+          }
+      });
+      return targets;
+  }, [gameState.selectedBottleId, gameState.bottles]);
+
+  // --- CHECK DEADLOCK & LOOPS ---
+  useEffect(() => {
+    if (gameState.isWin || processingMatch) {
+        setWarningState({ type: null, message: '' });
+        return;
+    }
+
+    const isDeadlock = checkDeadlock(gameState.bottles, gameState.history);
+    if (isDeadlock) {
+        setWarningState({ 
+            type: 'deadlock', 
+            message: '無路可走！試試道具或重來？' 
+        });
+        return;
+    }
+
+    const isLooping = checkStateRepetition(gameState.bottles, gameState.history);
+    if (isLooping) {
+        setWarningState({ 
+            type: 'loop', 
+            message: '鬼打牆了？這步沒效喔！' 
+        });
+        return;
+    }
+
+    setWarningState({ type: null, message: '' });
+  }, [gameState.bottles, gameState.history, gameState.isWin, processingMatch]);
 
   // --- 1. DETECTION EFFECT ---
   useEffect(() => {
@@ -54,7 +148,7 @@ export default function Game() {
 
     if (match) {
         setProcessingMatch(match);
-        setTimeout(() => sounds.win(), 100); // Play win/success sound
+        setTimeout(() => sounds.win(), 100); 
     }
   }, [gameState.bottles, gameState.orders, gameState.isWin, processingMatch]);
 
@@ -84,6 +178,11 @@ export default function Game() {
             }
             
             const isWin = checkLevelComplete(currentBottles, currentOrders);
+
+            if (isWin) {
+                // TRACK MISSION: WIN_LEVEL
+                trackMissionProgress('WIN_LEVEL');
+            }
 
             return {
                 ...prev,
@@ -116,11 +215,10 @@ export default function Game() {
       return null;
   };
 
-  const startLevel = (level: number) => {
-    const { bottles, orders } = generateLevel(level);
+  const startLevel = (levelInput: number) => {
+    const { bottles, orders } = generateLevel(levelInput);
     setGameState(prev => ({
       ...prev,
-      level,
       bottles: bottles,
       orders: orders,
       selectedBottleId: null,
@@ -128,14 +226,25 @@ export default function Game() {
       isWin: false
     }));
     setProcessingMatch(null);
+    setWarningState({ type: null, message: '' });
   };
 
   const handleNextLevel = () => {
       sounds.pop();
-      const nextLevel = gameState.level + 1;
-      setGameState(prev => ({ ...prev, level: nextLevel })); // Update state logic
-      startLevel(nextLevel); // Regenerate board
+      if (gameState.mode === 'adventure') {
+        const nextLevel = gameState.level + 1;
+        setGameState(prev => ({ ...prev, level: nextLevel }));
+        startLevel(nextLevel);
+      } else {
+          startLevel(gameState.level);
+      }
   };
+
+  const handleRestart = () => {
+      if (window.confirm("重新開始本關卡?")) {
+        startLevel(gameState.level);
+      }
+  }
 
   const handleBottleClick = (bottleId: string) => {
     if (gameState.isWin || processingMatch) return;
@@ -165,6 +274,9 @@ export default function Game() {
       const target = bottles[targetIndex];
 
       if (canPour(source, target)) {
+        // Valid Move
+        trackMissionProgress('POUR'); // TRACK MISSION: POUR
+
         const historySnapshot = {
              bottles: JSON.parse(JSON.stringify(bottles)),
              orders: JSON.parse(JSON.stringify(orders))
@@ -182,12 +294,16 @@ export default function Game() {
         if (isTargetNewlyCompleted) {
              const match = findMatch(currentBottles, orders);
              if (!match) {
-                 sounds.pop(); // Cap sound
+                 sounds.pop(); 
              }
         }
 
         const isWin = checkLevelComplete(currentBottles, orders);
         
+        if (isWin) {
+             trackMissionProgress('WIN_LEVEL');
+        }
+
         return {
           ...prev,
           bottles: currentBottles,
@@ -220,6 +336,8 @@ export default function Game() {
       }
 
       sounds.pop();
+      trackMissionProgress('USE_ITEM'); // TRACK MISSION
+
       const previousState = prev.history[prev.history.length - 1];
       const newHistory = prev.history.slice(0, -1);
       
@@ -242,6 +360,8 @@ export default function Game() {
              return prev;
          }
          sounds.magic();
+         trackMissionProgress('USE_ITEM'); // TRACK MISSION
+
          const newBottle: BottleData = {
              id: Math.random().toString(),
              layers: [],
@@ -265,6 +385,9 @@ export default function Game() {
            return prev;
         }
 
+        sounds.magic();
+        trackMissionProgress('USE_ITEM'); // TRACK MISSION
+
         const historySnapshot = {
             bottles: JSON.parse(JSON.stringify(prev.bottles)),
             orders: JSON.parse(JSON.stringify(prev.orders))
@@ -272,7 +395,6 @@ export default function Game() {
         const newHistory = [...prev.history, historySnapshot];
 
         const shuffledBottles = shuffleBottles(prev.bottles);
-        sounds.magic();
 
         return {
             ...prev,
@@ -292,6 +414,9 @@ export default function Game() {
             sounds.error();
             return prev;
         }
+        
+        sounds.magic();
+        trackMissionProgress('USE_ITEM'); // TRACK MISSION
 
         const historySnapshot = {
             bottles: JSON.parse(JSON.stringify(prev.bottles)),
@@ -300,7 +425,6 @@ export default function Game() {
         const newHistory = [...prev.history, historySnapshot];
 
         const revealedBottles = revealHiddenLayers(prev.bottles);
-        sounds.magic();
 
         return {
             ...prev,
@@ -319,18 +443,35 @@ export default function Game() {
         <div className="absolute inset-0 bg-gradient-to-b from-[#2a1b3d] to-[#0f0f1a] z-0"></div>
         <div className="absolute top-0 left-0 right-0 h-[60%] bg-[radial-gradient(circle_at_50%_0%,rgba(100,50,255,0.15),transparent_70%)] pointer-events-none z-0"></div>
         
-        {/* Exit Button */}
-        <div className="absolute top-6 left-6 z-50">
+        {/* Exit / Menu Buttons */}
+        <div className="absolute top-6 left-6 z-50 flex gap-3">
             <button 
                 onClick={() => navigate('/')} 
-                className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/50 hover:bg-white/20"
+                className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/50 hover:bg-white/20 transition-colors backdrop-blur-md border border-white/5"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                <Home size={18} />
+            </button>
+             <button 
+                onClick={handleRestart} 
+                className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/50 hover:bg-white/20 transition-colors backdrop-blur-md border border-white/5"
+            >
+                <RotateCcw size={18} />
+            </button>
+            <button 
+                onClick={() => setShowMissionModal(true)}
+                className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg border border-white/20 relative"
+            >
+                <ClipboardList size={18} />
+                {hasNotifications && (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-[#1a1a2e]"></span>
+                )}
             </button>
         </div>
 
         <TopBar 
             level={gameState.level} 
+            mode={gameState.mode}
+            difficultyLabel={gameState.difficultyLabel}
             coins={gameState.coins} 
             onSettings={() => alert("Settings")} 
         />
@@ -341,6 +482,19 @@ export default function Game() {
                 orders={gameState.orders} 
             />
 
+            {/* DYNAMIC HINT NOTIFICATION */}
+            {warningState.type && !gameState.isWin && (
+                <div className={`
+                    animate-bounce-short mb-4 backdrop-blur-md border px-4 py-2 rounded-full flex items-center gap-2 shadow-lg transition-all
+                    ${warningState.type === 'deadlock' 
+                        ? 'bg-red-500/20 border-red-500/50 text-red-100' 
+                        : 'bg-yellow-500/20 border-yellow-500/50 text-yellow-100'}
+                `}>
+                    {warningState.type === 'deadlock' ? <AlertTriangle size={18} /> : <Repeat size={18} />}
+                    <span className="text-sm font-bold">{warningState.message}</span>
+                </div>
+            )}
+
             <div className="w-full flex-1 flex items-end pb-8 relative">
                <div className="w-full flex flex-wrap justify-center gap-x-6 gap-y-8 content-end">
                   {gameState.bottles.map(bottle => (
@@ -348,6 +502,7 @@ export default function Game() {
                           key={bottle.id}
                           bottle={bottle}
                           isSelected={gameState.selectedBottleId === bottle.id}
+                          isValidTarget={validTargets.has(bottle.id)}
                           isFlying={processingMatch?.bottleId === bottle.id}
                           onClick={() => handleBottleClick(bottle.id)}
                       />
@@ -363,6 +518,14 @@ export default function Game() {
             onReveal={handleReveal}
         />
 
+        {/* --- MODALS --- */}
+        <DailyMissions 
+            isOpen={showMissionModal}
+            onClose={() => setShowMissionModal(false)}
+            missions={missions}
+            onClaim={handleClaimMission}
+        />
+
         {gameState.isWin && (
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-in fade-in duration-500">
                 <div className="bg-white/10 p-8 rounded-3xl border border-white/20 shadow-2xl flex flex-col items-center text-center max-w-sm mx-4">
@@ -370,13 +533,20 @@ export default function Game() {
                     <h2 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-400 mb-2">
                       AWESOME!
                     </h2>
-                    <p className="text-gray-300 mb-8">All Orders Completed!</p>
+                    <p className="text-gray-300 mb-8">完成訂單！</p>
                     
                     <button 
                         onClick={handleNextLevel}
                         className="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl text-xl font-bold shadow-lg hover:scale-105 active:scale-95 transition-transform"
                     >
-                        Next Level
+                        {gameState.mode === 'adventure' ? '下一關' : '再來一局'}
+                    </button>
+                    
+                    <button 
+                         onClick={() => navigate('/')}
+                         className="mt-4 text-white/50 hover:text-white underline text-sm"
+                    >
+                        回首頁
                     </button>
                 </div>
             </div>
