@@ -9,8 +9,10 @@ import { TargetArea } from './TargetArea';
 import { BottomControls } from './BottomControls';
 import { DailyMissions } from './DailyMissions';
 import { Settings } from './Settings';
+import { Background } from './Background';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { sounds } from '../utils/sound';
+import { getBackgroundByLevel, getSavedBackground } from '../utils/backgrounds';
 import { AlertTriangle, Home, RotateCcw, Repeat, ClipboardList } from 'lucide-react';
 
 export default function Game() {
@@ -56,6 +58,14 @@ export default function Game() {
 
   // Intelligent Warning System
   const [warningState, setWarningState] = useState<{ type: 'deadlock' | 'loop' | null, message: string }>({ type: null, message: '' });
+
+  // Background selection - use level-based or saved preference
+  const currentBackground = useMemo(() => {
+    if (gameState.mode === 'adventure') {
+      return getBackgroundByLevel(gameState.level);
+    }
+    return getSavedBackground();
+  }, [gameState.level, gameState.mode]);
 
   // Save coins whenever they change (shared across modes)
   useEffect(() => {
@@ -439,11 +449,10 @@ export default function Game() {
   };
 
   return (
-    <div className="relative w-full h-screen bg-[#1a1a2e] flex flex-col items-center justify-between text-white overflow-hidden font-sans">
+    <div className="relative w-full h-screen flex flex-col items-center justify-between text-white overflow-hidden font-sans">
         
         {/* Dynamic Background */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#2a1b3d] to-[#0f0f1a] z-0"></div>
-        <div className="absolute top-0 left-0 right-0 h-[60%] bg-[radial-gradient(circle_at_50%_0%,rgba(100,50,255,0.15),transparent_70%)] pointer-events-none z-0"></div>
+        <Background background={currentBackground} />
         
         {/* Exit / Menu Buttons */}
         <div className="absolute top-6 left-6 z-50 flex gap-3">

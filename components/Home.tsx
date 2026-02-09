@@ -2,9 +2,11 @@ import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Play, Zap, X, Trophy, Map, Star, ClipboardList, Heart } from 'lucide-react';
 import { Bottle } from './Bottle';
+import { Background } from './Background';
 import { BottleData, Color, DailyMission } from '../types';
 import { createLayer } from '../services/gameLogic';
 import { loadDailyMissions, saveDailyMissions, hasUnclaimedRewards } from '../services/missionService';
+import { getSavedBackground } from '../utils/backgrounds';
 import { DailyMissions } from './DailyMissions';
 import { INITIAL_COINS } from '../constants';
 
@@ -89,12 +91,14 @@ export const Home: React.FC = () => {
       navigate('/game', { state: { mode: 'quick_play', difficultyLevel, difficultyLabel: label } });
   };
 
+  // Get saved background preference
+  const currentBackground = useMemo(() => getSavedBackground(), []);
+
   return (
-    <div className="relative w-full h-screen bg-[#1a1a2e] flex flex-col items-center justify-center text-white overflow-hidden font-sans">
+    <div className="relative w-full h-screen flex flex-col items-center justify-center text-white overflow-hidden font-sans">
         
         {/* Dynamic Background */}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#2a1b3d] to-[#0f0f1a] z-0"></div>
-        <div className="absolute top-0 left-0 right-0 h-[60%] bg-[radial-gradient(circle_at_50%_0%,rgba(100,50,255,0.2),transparent_70%)] pointer-events-none z-0"></div>
+        <Background background={currentBackground} />
 
         {/* --- Top Right UI (Coins & Missions) --- */}
         <div className="absolute top-6 right-6 z-50 flex items-center gap-3">

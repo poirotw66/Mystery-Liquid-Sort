@@ -18,6 +18,12 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
+      },
+      build: {
+        outDir: 'dist',
+        assetsDir: 'assets',
+        // 確保資源路徑正確，使用相對路徑以支援 Capacitor
+        base: './'
       }
     };
 });
