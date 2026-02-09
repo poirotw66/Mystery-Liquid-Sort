@@ -2,6 +2,18 @@
 const AudioContext = (window.AudioContext || (window as any).webkitAudioContext);
 let ctx: AudioContext | null = null;
 
+const SOUND_STORAGE_KEY = 'mls_sound_enabled';
+
+export function getSoundEnabled(): boolean {
+  const stored = localStorage.getItem(SOUND_STORAGE_KEY);
+  if (stored === 'false') return false;
+  return true;
+}
+
+export function setSoundEnabled(enabled: boolean): void {
+  localStorage.setItem(SOUND_STORAGE_KEY, enabled ? 'true' : 'false');
+}
+
 const getCtx = () => {
   if (!ctx) {
     ctx = new AudioContext();
@@ -11,6 +23,7 @@ const getCtx = () => {
 
 // Helper to create an oscillator node
 const playTone = (freq: number, type: OscillatorType, duration: number, delay: number = 0, volume: number = 0.1) => {
+  if (!getSoundEnabled()) return;
   const context = getCtx();
   if (context.state === 'suspended') context.resume();
 
@@ -41,6 +54,7 @@ export const sounds = {
     playTone(800, 'sine', 0.1, 0.05, 0.05);
   },
   pour: () => {
+    if (!getSoundEnabled()) return;
     // Simulate liquid noise with white noise (approximated by rapid random freq) or sliding sine
     const context = getCtx();
     if (context.state === 'suspended') context.resume();

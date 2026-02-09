@@ -50,7 +50,7 @@ export type MissionType = 'POUR' | 'WIN_LEVEL' | 'USE_ITEM';
 export interface DailyMission {
   id: string;
   type: MissionType;
-  description: string;
+  descriptionKey: string;  // i18n key, e.g. 'mission.pour'
   target: number;     // Goal value (e.g., 50 pours)
   progress: number;   // Current value
   reward: number;     // Coins

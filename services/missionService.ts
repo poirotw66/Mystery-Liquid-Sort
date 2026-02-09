@@ -3,6 +3,20 @@ import { DailyMission, MissionType } from '../types';
 const STORAGE_KEY_MISSIONS = 'mls_daily_missions';
 const STORAGE_KEY_DATE = 'mls_mission_date';
 
+const TYPE_TO_DESCRIPTION_KEY: Record<MissionType, string> = {
+  POUR: 'mission.pour',
+  WIN_LEVEL: 'mission.win_level',
+  USE_ITEM: 'mission.use_item',
+};
+
+/** Normalize loaded missions to have descriptionKey (for backward compat with old saves). */
+function normalizeMissions(raw: DailyMission[]): DailyMission[] {
+  return raw.map(m => ({
+    ...m,
+    descriptionKey: m.descriptionKey ?? TYPE_TO_DESCRIPTION_KEY[m.type],
+  }));
+}
+
 /**
  * Generates a fresh set of daily missions.
  */
@@ -11,7 +25,7 @@ const generateMissions = (): DailyMission[] => {
     {
       id: 'm_pour',
       type: 'POUR',
-      description: '傾倒液體',
+      descriptionKey: 'mission.pour',
       target: 30,
       progress: 0,
       reward: 100,
@@ -20,7 +34,7 @@ const generateMissions = (): DailyMission[] => {
     {
       id: 'm_win',
       type: 'WIN_LEVEL',
-      description: '完成關卡',
+      descriptionKey: 'mission.win_level',
       target: 3,
       progress: 0,
       reward: 300,
@@ -29,7 +43,7 @@ const generateMissions = (): DailyMission[] => {
     {
       id: 'm_item',
       type: 'USE_ITEM',
-      description: '使用任意道具',
+      descriptionKey: 'mission.use_item',
       target: 2,
       progress: 0,
       reward: 150,
@@ -54,9 +68,10 @@ export const loadDailyMissions = (): DailyMission[] => {
     return newMissions;
   }
 
-  // Otherwise load existing
+  // Otherwise load existing (normalize for backward compat with old description field)
   const savedMissions = localStorage.getItem(STORAGE_KEY_MISSIONS);
-  return savedMissions ? JSON.parse(savedMissions) : generateMissions();
+  const loaded = savedMissions ? JSON.parse(savedMissions) : generateMissions();
+  return normalizeMissions(loaded);
 };
 
 /**

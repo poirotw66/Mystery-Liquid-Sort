@@ -8,6 +8,7 @@ import { TopBar } from './TopBar';
 import { TargetArea } from './TargetArea';
 import { BottomControls } from './BottomControls';
 import { DailyMissions } from './DailyMissions';
+import { Settings } from './Settings';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { sounds } from '../utils/sound';
 import { AlertTriangle, Home, RotateCcw, Repeat, ClipboardList } from 'lucide-react';
@@ -50,6 +51,7 @@ export default function Game() {
   // --- Daily Missions State ---
   const [missions, setMissions] = useState<DailyMission[]>(() => loadDailyMissions());
   const [showMissionModal, setShowMissionModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const hasNotifications = useMemo(() => hasUnclaimedRewards(missions), [missions]);
 
   // Intelligent Warning System
@@ -473,7 +475,7 @@ export default function Game() {
             mode={gameState.mode}
             difficultyLabel={gameState.difficultyLabel}
             coins={gameState.coins} 
-            onSettings={() => alert("Settings")} 
+            onSettings={() => setShowSettingsModal(true)} 
         />
 
         <div className="flex-1 w-full max-w-lg flex flex-col items-center justify-start z-10 px-4">
@@ -524,6 +526,11 @@ export default function Game() {
             onClose={() => setShowMissionModal(false)}
             missions={missions}
             onClaim={handleClaimMission}
+        />
+
+        <Settings 
+            isOpen={showSettingsModal}
+            onClose={() => setShowSettingsModal(false)}
         />
 
         {gameState.isWin && (

@@ -1,20 +1,51 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Mystery Liquid Sort
 
-# Run and deploy your AI Studio app
+A puzzle game where you sort colored liquids into bottles. Complete customer orders by filling bottles with a single color, then deliver them. Supports hidden layers, daily missions, and power-ups.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/drive/1laCeenlAC6t7K8JQr7hGCL3N_Vb8jIRI
+- **Adventure mode**: Progressive levels with increasing difficulty (more colors, hidden layers).
+- **Quick play**: Choose difficulty (Easy / Medium / Hard / Expert) for a single run.
+- **Daily missions**: Complete tasks (e.g. pour liquid, win levels, use items) to earn coins.
+- **Power-ups**: Undo, shuffle, add empty bottle, reveal hidden layers (cost coins).
+- **Settings**: Sound on/off, language (繁體中文 / English).
 
-## Run Locally
+## Prerequisites
 
-**Prerequisites:**  Node.js
+- [Node.js](https://nodejs.org/) (LTS recommended)
 
+## Run locally
 
 1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+   ```bash
+   npm install
+   ```
+2. Start the dev server:
+   ```bash
+   npm run dev
+   ```
+3. Open the URL shown in the terminal (e.g. `http://localhost:5173`).
+
+## Build and deploy
+
+- Build for production:
+  ```bash
+  npm run build
+  ```
+- Preview the production build locally:
+  ```bash
+  npm run preview
+  ```
+
+Output is in `dist/`. Deploy the contents of `dist/` to any static host (e.g. Vercel, Netlify, GitHub Pages). The app uses hash routing (`#/`, `#/game`), so configure the host to serve `index.html` for all routes if needed.
+
+## Tech stack
+
+- React 18, TypeScript, Vite
+- React Router (HashRouter)
+- Tailwind CSS (via class names in JSX)
+- Lucide React (icons)
+
+## License
+
+Private / unlicensed unless stated otherwise.

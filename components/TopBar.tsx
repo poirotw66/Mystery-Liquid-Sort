@@ -26,12 +26,23 @@ export const TopBar: React.FC<TopBarProps> = ({ level, mode, difficultyLabel, co
          </h1>
       </div>
 
-      {/* Coins Display */}
-      <div className="flex items-center bg-black/30 backdrop-blur-md rounded-full pl-1.5 pr-4 py-1.5 border border-white/10 shadow-lg pointer-events-auto">
-        <div className="w-8 h-8 bg-gradient-to-br from-yellow-300 to-yellow-600 rounded-full flex items-center justify-center mr-2 shadow-inner border border-yellow-200">
-           <Heart className="w-4 h-4 text-white fill-white drop-shadow-sm" />
+      {/* Right: Settings + Coins (both clickable) */}
+      <div className="flex items-center gap-2 pointer-events-auto">
+        {onSettings && (
+          <button
+            onClick={onSettings}
+            className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/50 hover:bg-white/20 transition-colors backdrop-blur-md border border-white/5"
+            aria-label="Settings"
+          >
+            <Settings size={18} />
+          </button>
+        )}
+        <div className="flex items-center bg-black/30 backdrop-blur-md rounded-full pl-1.5 pr-4 py-1.5 border border-white/10 shadow-lg">
+          <div className="w-8 h-8 bg-gradient-to-br from-yellow-300 to-yellow-600 rounded-full flex items-center justify-center mr-2 shadow-inner border border-yellow-200">
+             <Heart className="w-4 h-4 text-white fill-white drop-shadow-sm" />
+          </div>
+          <span className="text-white font-bold text-lg tabular-nums tracking-wide">{coins}</span>
         </div>
-        <span className="text-white font-bold text-lg tabular-nums tracking-wide">{coins}</span>
       </div>
     </div>
   );
