@@ -1,6 +1,5 @@
 import React from 'react';
 import { BottleData } from '../types';
-import { MAX_CAPACITY } from '../constants';
 
 interface BottleProps {
   bottle: BottleData;
@@ -11,7 +10,7 @@ interface BottleProps {
 }
 
 export const Bottle: React.FC<BottleProps> = ({ bottle, isSelected, isValidTarget = false, isFlying = false, onClick }) => {
-  const layerHeight = 100 / MAX_CAPACITY;
+  const layerHeight = 100 / bottle.capacity;
   
   const isCapped = bottle.isCompleted;
 

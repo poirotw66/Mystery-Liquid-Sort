@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { GameState, BottleData, GameMode, DailyMission, MissionType } from '../types';
-import { INITIAL_COINS, MAX_CAPACITY, COST_SHUFFLE, COST_REVEAL, COST_ADD_BOTTLE, COST_UNDO } from '../constants';
+import { INITIAL_COINS, getCapacityForLevel, COST_SHUFFLE, COST_REVEAL, COST_ADD_BOTTLE, COST_UNDO } from '../constants';
 import { generateLevel, canPour, pourLiquid, checkLevelComplete, shuffleBottles, revealHiddenLayers, checkDeadlock, checkStateRepetition } from '../services/gameLogic';
 import { loadDailyMissions, saveDailyMissions, updateMissionProgress, hasUnclaimedRewards } from '../services/missionService';
 import { Bottle } from './Bottle';
@@ -367,7 +367,7 @@ export default function Game() {
          const newBottle: BottleData = {
              id: Math.random().toString(),
              layers: [],
-             capacity: MAX_CAPACITY,
+             capacity: getCapacityForLevel(prev.level),
              isCompleted: false
          };
          return {

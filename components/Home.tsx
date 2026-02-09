@@ -219,27 +219,27 @@ export const Home: React.FC = () => {
                     <div className="space-y-3">
                         <DifficultyOption 
                             label="EASY" 
-                            subLabel="3 Colors • No Hidden" 
+                            subLabel="3 Colors • Cap 4 • Some ?" 
                             color="bg-green-500" 
-                            onClick={() => handleQuickPlayClick(1, "EASY")} 
+                            onClick={() => handleQuickPlayClick(4, "EASY")} 
                         />
                         <DifficultyOption 
                             label="MEDIUM" 
-                            subLabel="4 Colors • Some Hidden" 
+                            subLabel="4 Colors • Cap 5 • More ?" 
                             color="bg-yellow-500" 
-                            onClick={() => handleQuickPlayClick(5, "MEDIUM")} 
+                            onClick={() => handleQuickPlayClick(9, "MEDIUM")} 
                         />
                         <DifficultyOption 
                             label="HARD" 
-                            subLabel="5 Colors • Tricky" 
+                            subLabel="5 Colors • Cap 6 • Many ?" 
                             color="bg-orange-500" 
-                            onClick={() => handleQuickPlayClick(10, "HARD")} 
+                            onClick={() => handleQuickPlayClick(15, "HARD")} 
                         />
                         <DifficultyOption 
                             label="EXPERT" 
-                            subLabel="6 Colors • Mystery" 
+                            subLabel="6 Colors • Cap 6 • Max ?" 
                             color="bg-red-600" 
-                            onClick={() => handleQuickPlayClick(20, "EXPERT")} 
+                            onClick={() => handleQuickPlayClick(25, "EXPERT")} 
                         />
                     </div>
                 </div>
