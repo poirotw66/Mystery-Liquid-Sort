@@ -454,60 +454,71 @@ export default function Game() {
         {/* Dynamic Background */}
         <Background background={currentBackground} />
         
-        {/* Exit / Menu Buttons */}
-        <div className="absolute top-6 left-6 z-50 flex gap-3">
-            <button 
-                onClick={() => navigate('/')} 
-                className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/50 hover:bg-white/20 transition-colors backdrop-blur-md border border-white/5"
-            >
-                <Home size={18} />
-            </button>
-             <button 
-                onClick={handleRestart} 
-                className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/50 hover:bg-white/20 transition-colors backdrop-blur-md border border-white/5"
-            >
-                <RotateCcw size={18} />
-            </button>
-            <button 
-                onClick={() => setShowMissionModal(true)}
-                className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg border border-white/20 relative"
-            >
-                <ClipboardList size={18} />
-                {hasNotifications && (
-                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-[#1a1a2e]"></span>
-                )}
-            </button>
+        {/* Top Bar Container - Unified Design */}
+        <div className="w-full relative z-50 safe-top">
+            <div className="w-full flex items-center gap-2 md:gap-3 px-3 md:px-6 pt-3 md:pt-4 pb-2 md:pb-3 safe-left safe-right">
+                {/* Left: Action Buttons - Unified Card Style */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <button 
+                        onClick={() => navigate('/')} 
+                        className="touch-target w-10 h-10 md:w-11 md:h-11 rounded-xl bg-white/10 backdrop-blur-xl flex items-center justify-center text-white/70 active:bg-white/20 transition-all border border-white/20 shadow-lg touch-active"
+                        aria-label="Home"
+                    >
+                        <Home size={18} className="md:w-5 md:h-5" />
+                    </button>
+                    <button 
+                        onClick={handleRestart} 
+                        className="touch-target w-10 h-10 md:w-11 md:h-11 rounded-xl bg-white/10 backdrop-blur-xl flex items-center justify-center text-white/70 active:bg-white/20 transition-all border border-white/20 shadow-lg touch-active"
+                        aria-label="Restart"
+                    >
+                        <RotateCcw size={18} className="md:w-5 md:h-5" />
+                    </button>
+                    <button 
+                        onClick={() => setShowMissionModal(true)}
+                        className="touch-target w-10 h-10 md:w-11 md:h-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg border border-white/20 relative touch-active"
+                        aria-label="Daily Missions"
+                    >
+                        <ClipboardList size={18} className="md:w-5 md:h-5" />
+                        {hasNotifications && (
+                            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 md:w-3 md:h-3 bg-red-500 rounded-full border-2 border-white/20"></span>
+                        )}
+                    </button>
+                </div>
+
+                {/* Center: TopBar Component - Takes remaining space */}
+                <div className="flex-1 min-w-0">
+                    <TopBar 
+                        level={gameState.level} 
+                        mode={gameState.mode}
+                        difficultyLabel={gameState.difficultyLabel}
+                        coins={gameState.coins} 
+                        onSettings={() => setShowSettingsModal(true)} 
+                    />
+                </div>
+            </div>
         </div>
 
-        <TopBar 
-            level={gameState.level} 
-            mode={gameState.mode}
-            difficultyLabel={gameState.difficultyLabel}
-            coins={gameState.coins} 
-            onSettings={() => setShowSettingsModal(true)} 
-        />
-
-        <div className="flex-1 w-full max-w-lg flex flex-col items-center justify-start z-10 px-4">
+        <div className="flex-1 w-full max-w-lg flex flex-col items-center justify-start z-10 px-3 md:px-4 safe-left safe-right pt-2 md:pt-0">
             
             <TargetArea 
                 orders={gameState.orders} 
             />
 
-            {/* DYNAMIC HINT NOTIFICATION */}
+            {/* DYNAMIC HINT NOTIFICATION - Unified Card Style */}
             {warningState.type && !gameState.isWin && (
                 <div className={`
-                    animate-bounce-short mb-4 backdrop-blur-md border px-4 py-2 rounded-full flex items-center gap-2 shadow-lg transition-all
+                    animate-bounce-short mb-3 md:mb-4 backdrop-blur-xl border px-4 py-2.5 rounded-2xl flex items-center gap-2.5 shadow-lg transition-all mx-2
                     ${warningState.type === 'deadlock' 
-                        ? 'bg-red-500/20 border-red-500/50 text-red-100' 
-                        : 'bg-yellow-500/20 border-yellow-500/50 text-yellow-100'}
+                        ? 'bg-red-500/20 border-red-500/30 text-red-100' 
+                        : 'bg-yellow-500/20 border-yellow-500/30 text-yellow-100'}
                 `}>
-                    {warningState.type === 'deadlock' ? <AlertTriangle size={18} /> : <Repeat size={18} />}
-                    <span className="text-sm font-bold">{warningState.message}</span>
+                    {warningState.type === 'deadlock' ? <AlertTriangle size={20} className="md:w-5 md:h-5" /> : <Repeat size={20} className="md:w-5 md:h-5" />}
+                    <span className="text-xs md:text-sm font-bold">{warningState.message}</span>
                 </div>
             )}
 
-            <div className="w-full flex-1 flex items-end pb-8 relative">
-               <div className="w-full flex flex-wrap justify-center gap-x-6 gap-y-8 content-end">
+            <div className="w-full flex-1 flex items-end pb-4 md:pb-8 relative">
+               <div className="w-full flex flex-wrap justify-center gap-x-4 gap-y-6 md:gap-x-6 md:gap-y-8 content-end">
                   {gameState.bottles.map(bottle => (
                       <Bottle
                           key={bottle.id}
@@ -543,24 +554,24 @@ export default function Game() {
         />
 
         {gameState.isWin && (
-            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-in fade-in duration-500">
-                <div className="bg-white/10 p-8 rounded-3xl border border-white/20 shadow-2xl flex flex-col items-center text-center max-w-sm mx-4">
-                    <div className="text-6xl mb-4">🏆</div>
-                    <h2 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-400 mb-2">
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-in fade-in duration-500 safe-top safe-bottom safe-left safe-right">
+                <div className="bg-white/10 p-6 md:p-8 rounded-2xl md:rounded-3xl border border-white/20 shadow-2xl flex flex-col items-center text-center max-w-sm mx-3 md:mx-4">
+                    <div className="text-5xl md:text-6xl mb-3 md:mb-4">🏆</div>
+                    <h2 className="text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-400 mb-2">
                       AWESOME!
                     </h2>
-                    <p className="text-gray-300 mb-8">完成訂單！</p>
+                    <p className="text-gray-300 mb-6 md:mb-8 text-sm md:text-base">完成訂單！</p>
                     
                     <button 
                         onClick={handleNextLevel}
-                        className="w-full py-4 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl text-xl font-bold shadow-lg hover:scale-105 active:scale-95 transition-transform"
+                        className="touch-target w-full py-3.5 md:py-4 bg-gradient-to-r from-green-500 to-emerald-600 rounded-lg md:rounded-xl text-lg md:text-xl font-bold shadow-lg active:scale-95 transition-transform touch-active"
                     >
                         {gameState.mode === 'adventure' ? '下一關' : '再來一局'}
                     </button>
                     
                     <button 
                          onClick={() => navigate('/')}
-                         className="mt-4 text-white/50 hover:text-white underline text-sm"
+                         className="touch-target mt-3 md:mt-4 text-white/50 active:text-white underline text-xs md:text-sm py-2"
                     >
                         回首頁
                     </button>

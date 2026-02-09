@@ -12,36 +12,35 @@ interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({ level, mode, difficultyLabel, coins, onSettings }) => {
   return (
-    <div className="w-full flex justify-between items-center px-6 pt-6 pb-2 z-50 pointer-events-none">
-      {/* Spacer for alignment with left buttons */}
-      <div className="w-12"></div>
-
-      {/* Level Indicator - Styled like a floating card */}
-      <div className="flex flex-col items-center">
-         <div className="text-yellow-400 text-xs font-bold tracking-widest uppercase mb-1 drop-shadow-md">
+    <div className="w-full flex items-center justify-between gap-2 md:gap-3">
+      {/* Left: Level/Difficulty Card - Unified Design */}
+      <div className="flex-1 min-w-0 flex items-center">
+        <div className="bg-white/10 backdrop-blur-xl rounded-2xl px-3 md:px-4 py-2 md:py-2.5 border border-white/20 shadow-lg flex flex-col items-start min-w-0 w-full">
+          <div className="text-yellow-400/90 text-[10px] md:text-xs font-bold tracking-wider uppercase mb-0.5 drop-shadow-md">
             {mode === 'adventure' ? 'LEVEL' : 'DIFFICULTY'}
-         </div>
-         <h1 className="text-white text-3xl font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] font-mono">
+          </div>
+          <h1 className="text-white text-base md:text-2xl font-black drop-shadow-md font-mono truncate max-w-full">
             {mode === 'adventure' ? level : difficultyLabel}
-         </h1>
+          </h1>
+        </div>
       </div>
 
-      {/* Right: Settings + Coins (both clickable) */}
-      <div className="flex items-center gap-2 pointer-events-auto">
+      {/* Right: Settings + Coins - Unified Card Design */}
+      <div className="flex items-center gap-2 flex-shrink-0">
         {onSettings && (
           <button
             onClick={onSettings}
-            className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/50 hover:bg-white/20 transition-colors backdrop-blur-md border border-white/5"
+            className="touch-target w-10 h-10 md:w-11 md:h-11 rounded-xl bg-white/10 backdrop-blur-xl flex items-center justify-center text-white/70 active:bg-white/20 transition-all border border-white/20 shadow-lg touch-active"
             aria-label="Settings"
           >
-            <Settings size={18} />
+            <Settings size={18} className="md:w-5 md:h-5" />
           </button>
         )}
-        <div className="flex items-center bg-black/30 backdrop-blur-md rounded-full pl-1.5 pr-4 py-1.5 border border-white/10 shadow-lg">
-          <div className="w-8 h-8 bg-gradient-to-br from-yellow-300 to-yellow-600 rounded-full flex items-center justify-center mr-2 shadow-inner border border-yellow-200">
-             <Heart className="w-4 h-4 text-white fill-white drop-shadow-sm" />
+        <div className="flex items-center gap-2 bg-white/10 backdrop-blur-xl rounded-2xl px-3 md:px-4 py-2 border border-white/20 shadow-lg">
+          <div className="w-6 h-6 md:w-7 md:h-7 bg-gradient-to-br from-yellow-300 to-yellow-600 rounded-lg flex items-center justify-center shadow-inner border border-yellow-200/50">
+            <Heart className="w-3 h-3 md:w-4 md:h-4 text-white fill-white drop-shadow-sm" />
           </div>
-          <span className="text-white font-bold text-lg tabular-nums tracking-wide">{coins}</span>
+          <span className="text-white font-bold text-sm md:text-lg tabular-nums tracking-wide">{coins}</span>
         </div>
       </div>
     </div>

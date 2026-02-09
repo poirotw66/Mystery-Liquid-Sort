@@ -18,23 +18,25 @@ export const Bottle: React.FC<BottleProps> = ({ bottle, isSelected, isValidTarge
     <div 
       onClick={isCapped ? undefined : onClick}
       className={`
-        relative flex flex-col items-center justify-end
-        transition-all duration-300 ease-in-out
+        relative flex flex-col items-center justify-end touch-target
+        transition-all duration-300 ease-in-out touch-active
         ${isFlying ? 'z-50 pointer-events-none' : ''}
         ${isCapped && !isFlying ? 'cursor-not-allowed opacity-90' : 'cursor-pointer'}
         
-        /* Selected State */
-        ${isSelected && !isCapped && !isFlying ? '-translate-y-6 scale-105 drop-shadow-[0_20px_20px_rgba(0,0,0,0.5)]' : ''}
+        /* Selected State - Mobile optimized */
+        ${isSelected && !isCapped && !isFlying ? '-translate-y-4 md:-translate-y-6 scale-105 drop-shadow-[0_20px_20px_rgba(0,0,0,0.5)]' : ''}
         
-        /* Valid Target Hint (Pulsing Green Glow) */
-        ${isValidTarget && !isSelected ? 'ring-4 ring-emerald-400/60 ring-offset-4 ring-offset-[#1a1a2e] scale-[1.02]' : ''}
+        /* Valid Target Hint (Pulsing Green Glow) - Mobile optimized */
+        ${isValidTarget && !isSelected ? 'ring-2 md:ring-4 ring-emerald-400/60 ring-offset-2 md:ring-offset-4 ring-offset-[#1a1a2e] scale-[1.02]' : ''}
 
-        /* Hover State (only if not selected and not flying) */
-        ${!isSelected && !isCapped && !isFlying && !isValidTarget ? 'hover:-translate-y-2 hover:drop-shadow-lg' : ''}
+        /* Active State for mobile touch */
+        ${!isSelected && !isCapped && !isFlying && !isValidTarget ? 'active:scale-95 active:-translate-y-1' : ''}
       `}
       style={{ 
-        width: '64px', 
+        width: '72px', // Increased from 64px for better touch target
         height: '200px',
+        minWidth: '72px', // Ensure minimum touch target
+        minHeight: '200px',
         // Flying Animation: Move up significantly and fade out/scale down
         transform: isFlying ? 'translateY(-60vh) scale(0.3)' : undefined,
         opacity: isFlying ? 0 : 1
