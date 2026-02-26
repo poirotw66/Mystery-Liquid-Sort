@@ -271,6 +271,23 @@ export default function Game() {
 
     const handleRestart = () => {
         if (window.confirm("重新開始本關卡?")) {
+            if (gameState.initialBoardState) {
+                const resetBottles = JSON.parse(JSON.stringify(gameState.initialBoardState.bottles));
+                const resetOrders = JSON.parse(JSON.stringify(gameState.initialBoardState.orders));
+                const isWin = checkLevelComplete(resetBottles, resetOrders);
+
+                setGameState(prev => ({
+                    ...prev,
+                    bottles: resetBottles,
+                    orders: resetOrders,
+                    selectedBottleId: null,
+                    history: [],
+                    isWin
+                }));
+                setProcessingMatch(null);
+                setWarningState({ type: null, message: '' });
+                return;
+            }
             startLevel(gameState.level);
         }
     }
