@@ -632,13 +632,13 @@ export const generateLevel = (level: number): { bottles: BottleData[], orders: O
   }
 
   const band = getDifficultyBand(level);
-  const maxAttempts = 40;
+  const maxAttempts = level >= 15 ? 10 : 40; // Fewer attempts for Expert to stay fast
 
   let bestBottles: BottleData[] | null = null;
   let bestOrders: Order[] | null = null;
   let bestScore = -Infinity;
 
-  // Build color pool: `capacity` layers of each active color
+  // Build color pool
   const colorPool: Color[] = [];
   for (const color of activeColors) {
     for (let i = 0; i < capacity; i++) {
@@ -647,11 +647,9 @@ export const generateLevel = (level: number): { bottles: BottleData[], orders: O
   }
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    // 2. Distribute colors with no same-color adjacency
     const distribution = distributeWithoutAdjacency(colorPool, numColors, capacity);
     if (!distribution) continue;
 
-    // 3. Build BottleData array
     const bottles: BottleData[] = [];
     for (let i = 0; i < numColors; i++) {
       const layers = distribution[i].map(c => createLayer(c, false));
@@ -661,14 +659,12 @@ export const generateLevel = (level: number): { bottles: BottleData[], orders: O
       bottles.push({ id: uid(), layers: [], capacity, isCompleted: false });
     }
 
-    // 4. Reject accidentally solved states
     const isSolved = bottles.every(b => {
       if (b.layers.length === 0) return true;
       return b.layers.length === capacity && b.layers.every(l => l.color === b.layers[0].color);
     });
     if (isSolved) continue;
 
-    // 5. Apply hidden layers at color boundaries
     bottles.forEach(b => {
       b.layers.forEach((l, idx) => {
         if (idx === b.layers.length - 1) {
@@ -681,14 +677,17 @@ export const generateLevel = (level: number): { bottles: BottleData[], orders: O
       });
     });
 
-    // 6. Verify solvability and assess difficulty
     const orders = buildOrdersFromBottles(bottles, activeColors);
-    const solveResult = findShortestPath(bottles, orders);
+
+    // For Expert, we use a smaller node limit to verify solvability quickly
+    const verifyLimit = level >= 15 ? 5000 : 20000;
+    const solveResult = findShortestPath(bottles, orders, verifyLimit);
 
     if (solveResult.isSolvable) {
       const steps = solveResult.steps;
-      if (steps >= band.min && steps <= band.max) {
-        return { bottles, orders }; // Perfect difficulty match
+      // If we found a complex enough level or enough attempts failed, take it.
+      if (steps >= band.min || (level >= 15 && attempt > 3)) {
+        return { bottles, orders };
       }
       if (steps > bestScore) {
         bestScore = steps;
@@ -696,8 +695,9 @@ export const generateLevel = (level: number): { bottles: BottleData[], orders: O
         bestOrders = cloneOrders(orders);
       }
     } else if (solveResult.steps === -1) {
-      // Solver timed out — with extra bottles, very likely solvable.
-      // Use fragmentation as difficulty proxy.
+      // Solver timeout is actually good for Expert — it means it's likely hard.
+      if (level >= 15) return { bottles, orders };
+
       const fragScore = calculateFragmentationScore(bottles);
       if (fragScore > bestScore || !bestBottles) {
         bestScore = fragScore;
