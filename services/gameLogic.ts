@@ -108,64 +108,54 @@ export const revealHiddenLayers = (bottles: BottleData[]): BottleData[] => {
  * Shuffles the liquids in incomplete bottles with fragmentation-aware placement.
  * Avoids creating consecutive same-color layers to make puzzles harder.
  */
+/**
+ * Shuffles the liquids in incomplete bottles with fragmentation-aware placement.
+ * Deprecated: Use generateLevel for fresh levels. This is only for mid-game shuffle items.
+ */
 export const shuffleBottles = (bottles: BottleData[]): BottleData[] => {
   const incompleteBottles = bottles.filter(b => !b.isCompleted);
-
-  // 1. Extract all layers from incomplete bottles
   let allLayers: Layer[] = [];
   incompleteBottles.forEach(b => {
     allLayers.push(...b.layers);
   });
 
-  // 2. Fisher-Yates Shuffle
   for (let i = allLayers.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [allLayers[i], allLayers[j]] = [allLayers[j], allLayers[i]];
   }
 
-  // 3. Clear the incomplete bottles to prepare for refill
   const newBottleStates = incompleteBottles.map(b => ({
     ...b,
     layers: [] as Layer[]
   }));
 
-  // 4. Fragmentation-aware distribution: place each layer in a way that maximizes color transitions
   for (const layer of allLayers) {
     const validBottles = newBottleStates.filter(b => b.layers.length < b.capacity);
-
     if (validBottles.length > 0) {
-      // Score each bottle: prefer bottles where top color is different
       let bestBottle = validBottles[0];
       let bestScore = -Infinity;
-
       for (const bottle of validBottles) {
         let score = 0;
-
         if (bottle.layers.length === 0) {
-          score = 5; // Empty bottle is neutral
+          score = 5;
         } else {
           const topColor = bottle.layers[bottle.layers.length - 1].color;
           if (topColor !== layer.color) {
-            score = 20; // Different color = good fragmentation
+            score = 20;
           } else {
-            score = -25; // Same color = bad, creates consecutive run
+            score = -25;
           }
         }
-
-        // Add slight randomness to avoid deterministic patterns
         score += Math.random() * 4;
-
         if (score > bestScore) {
           bestScore = score;
           bestBottle = bottle;
         }
       }
-
       bestBottle.layers.push(layer);
     }
   }
 
-  // 5. Update visibility: only hide at color boundaries so ? is not trivially same as neighbor
   newBottleStates.forEach(b => {
     b.layers.forEach((l, idx) => {
       if (idx === b.layers.length - 1) {
@@ -173,26 +163,21 @@ export const shuffleBottles = (bottles: BottleData[]): BottleData[] => {
       } else {
         const layerAbove = b.layers[idx + 1];
         const isAtBoundary = l.color !== layerAbove.color;
-        l.isHidden = isAtBoundary && Math.random() < 0.5;
+        l.isHidden = isAtBoundary && Math.random() < 0.3;
       }
     });
   });
 
-  // 6. Merge back
   return bottles.map(b => {
     if (b.isCompleted) return b;
-
     const updated = newBottleStates.find(nb => nb.id === b.id);
-
     if (updated) {
       const isCompleted =
         updated.layers.length === updated.capacity &&
         updated.layers.every(l => l.color === updated.layers[0].color && !l.isHidden);
-
       return { ...updated, isCompleted };
     }
-
-    return updated || b;
+    return b;
   });
 };
 
@@ -200,20 +185,26 @@ export const shuffleBottles = (bottles: BottleData[]): BottleData[] => {
  * Generates a string hash representing the current bottle configuration.
  * Used to detect loops (repeated states).
  */
+/**
+ * Generates a string hash representing the current bottle configuration efficiently.
+ * Used for BFS solver and loop detection.
+ */
 export const getGameStateHash = (bottles: BottleData[]): string => {
-  // Sort to ensure bottle order in array doesn't affect hash
-  // (though bottle IDs are static, sorting ensures robustness)
-  return bottles
-    .slice() // Clone before sort
-    .sort((a, b) => a.id.localeCompare(b.id))
-    .map(b => {
-      // Create a string for each bottle: "ID:[Color-Hidden,Color-Visible...]"
-      const layersStr = b.layers
-        .map(l => `${l.color}-${l.isHidden ? 'h' : 'v'}`)
-        .join(',');
-      return `${b.id}:[${layersStr}]`;
-    })
-    .join('|');
+  let res = '';
+  // We generally keep bottles in a stable order, but for state equality, 
+  // sorting ensures that [A, B] is the same as [B, A].
+  const sorted = [...bottles].sort((a, b) => a.id < b.id ? -1 : 1);
+
+  for (let i = 0; i < sorted.length; i++) {
+    const b = sorted[i];
+    res += b.id + ':';
+    for (let j = 0; j < b.layers.length; j++) {
+      const l = b.layers[j];
+      res += l.color[1] + (l.isHidden ? 'h' : 'v'); // use abbreviation
+    }
+    res += '|';
+  }
+  return res;
 };
 
 /**
@@ -295,44 +286,53 @@ function cloneOrders(orders: Order[]): Order[] {
   return orders.map(o => ({ ...o }));
 }
 
+// --- AI SOLVER: Dijkstra/BFS to find the shortest path to victory ---
+
 /**
- * Local BFS: max number of orders that can be completed within maxDepth moves.
- * Used as primary difficulty metric (lower = deeper = harder).
+ * Finds the shortest solve path using BFS.
+ * Used for difficulty estimation and level validation.
  */
-function localBFSMaxOrdersCompleted(
+export function findShortestPath(
   bottles: BottleData[],
   orders: Order[],
-  maxDepth: number = BFS_MAX_DEPTH
-): number {
+  maxNodes: number = 20000
+): { steps: number; isSolvable: boolean } {
   const initialCompleted = orders.filter(o => o.isCompleted).length;
-  let best = initialCompleted;
-  const visited = new Map<string, number>();
-  type Node = { bottles: BottleData[]; orders: Order[]; depth: number; completed: number };
-  const queue: Node[] = [{ bottles: cloneBottles(bottles), orders: cloneOrders(orders), depth: 0, completed: initialCompleted }];
+  const targetCompleted = orders.length;
 
-  while (queue.length > 0) {
-    const node = queue.shift()!;
-    if (node.depth > maxDepth) continue;
+  if (initialCompleted === targetCompleted) return { steps: 0, isSolvable: true };
 
-    const key = getStateKey(node.bottles, node.orders);
-    const seen = visited.get(key);
-    if (seen !== undefined && seen >= node.completed) continue;
-    visited.set(key, node.completed);
-    best = Math.max(best, node.completed);
+  const visited = new Set<string>();
+  const queue: { bottles: BottleData[]; orders: Order[]; steps: number }[] = [
+    {
+      bottles: bottles, // Removed redundant clone on first push
+      orders: orders,
+      steps: 0
+    }
+  ];
 
-    const moves = getValidMoves(node.bottles);
-    for (const { source, target } of moves) {
-      const src = node.bottles.find(b => b.id === source.id)!;
-      const tgt = node.bottles.find(b => b.id === target.id)!;
+  let nodesExplored = 0;
+
+  while (queue.length > 0 && nodesExplored < maxNodes) {
+    const { bottles: currentBottles, orders: currentOrders, steps } = queue.shift()!;
+    nodesExplored++;
+
+    const key = getStateKey(currentBottles, currentOrders);
+    if (visited.has(key)) continue;
+    visited.add(key);
+
+    const moves = getValidMoves(currentBottles);
+    for (const move of moves) {
+      const src = currentBottles.find(b => b.id === move.source.id)!;
+      const tgt = currentBottles.find(b => b.id === move.target.id)!;
       const { newSource, newTarget } = pourLiquid(src, tgt);
 
-      let nextBottles = node.bottles.map(b => {
+      let nextBottles = currentBottles.map(b => {
         if (b.id === newSource.id) return newSource;
         if (b.id === newTarget.id) return newTarget;
         return b;
       });
-      let nextOrders = cloneOrders(node.orders);
-      let nextCompleted = node.completed;
+      let nextOrders = cloneOrders(currentOrders);
 
       if (newTarget.isCompleted) {
         const firstOpen = nextOrders.findIndex(o => !o.isCompleted && !o.isLocked);
@@ -340,19 +340,22 @@ function localBFSMaxOrdersCompleted(
           const result = applyOrderCompletion(nextBottles, nextOrders, newTarget.id, newTarget.layers[0].color);
           nextBottles = result.newBottles;
           nextOrders = result.newOrders;
-          nextCompleted = nextOrders.filter(o => o.isCompleted).length;
         }
+      }
+
+      if (nextOrders.every(o => o.isCompleted)) {
+        return { steps: steps + 1, isSolvable: true };
       }
 
       queue.push({
         bottles: nextBottles,
         orders: nextOrders,
-        depth: node.depth + 1,
-        completed: nextCompleted,
+        steps: steps + 1
       });
     }
   }
-  return best;
+
+  return { steps: -1, isSolvable: false };
 }
 
 /** Max orders allowed to be completable in BFS window for this level (higher level = stricter = harder). */
@@ -366,7 +369,10 @@ function getMaxOrdersTargetForLevel(level: number): number {
  * Checks if there are any valid moves remaining.
  * Now includes a lookahead to detect forced loops (Back-and-Forth deadlocks).
  */
-export const checkDeadlock = (bottles: BottleData[], history: { bottles: BottleData[] }[] = []): boolean => {
+export const checkDeadlock = (bottles: BottleData[], history: { bottles: BottleData[] }[] = [], orders: Order[] = []): boolean => {
+  // 0. If win, no deadlock
+  if (orders.length > 0 && orders.every(o => o.isCompleted)) return false;
+
   // 1. Get immediate valid moves
   const currentMoves = getValidMoves(bottles);
   if (currentMoves.length === 0) return true; // Strict deadlock (no moves physically possible)
@@ -550,377 +556,179 @@ function countBadRuns(bottles: BottleData[], maxAllowedRun: number = 1): number 
 }
 
 /**
- * Redistribute layers using forward simulation to maximize fragmentation.
- * This is a post-scramble optimization step.
+ * Shuffle an array in place (Fisher-Yates).
  */
-function redistributeForFragmentation(bottles: BottleData[]): BottleData[] {
-  // Extract all layers from non-completed bottles
-  const allLayers: Layer[] = [];
-  const capacities: { id: string; capacity: number }[] = [];
-
-  for (const bottle of bottles) {
-    if (!bottle.isCompleted) {
-      allLayers.push(...bottle.layers);
-      capacities.push({ id: bottle.id, capacity: bottle.capacity });
-    }
-  }
-
-  // Shuffle layers
-  for (let i = allLayers.length - 1; i > 0; i--) {
+function shuffleArray<T>(arr: T[]): T[] {
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [allLayers[i], allLayers[j]] = [allLayers[j], allLayers[i]];
+    [result[i], result[j]] = [result[j], result[i]];
   }
-
-  // Clear incomplete bottles
-  const newBottles = bottles.map(b => {
-    if (b.isCompleted) return b;
-    return { ...b, layers: [] as Layer[] };
-  });
-
-  // Greedy placement: for each layer, pick the bottle that maximizes fragmentation
-  for (const layer of allLayers) {
-    let bestBottleIdx = -1;
-    let bestScore = -Infinity;
-
-    const incompleteIndices = newBottles
-      .map((b, i) => ({ b, i }))
-      .filter(({ b }) => !b.isCompleted && b.layers.length < b.capacity);
-
-    for (const { b, i } of incompleteIndices) {
-      // Score: prefer different color on top (fragmentation)
-      let score = 0;
-
-      if (b.layers.length === 0) {
-        score = 5; // Empty bottle is neutral
-      } else {
-        const topColor = b.layers[b.layers.length - 1].color;
-        if (topColor !== layer.color) {
-          score = 20; // Different color = good fragmentation
-        } else {
-          score = -30; // Same color = bad, creates run
-        }
-      }
-
-      // Slight randomness to avoid deterministic patterns
-      score += Math.random() * 3;
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestBottleIdx = i;
-      }
-    }
-
-    if (bestBottleIdx >= 0) {
-      newBottles[bestBottleIdx].layers.push(layer);
-    }
-  }
-
-  // Update completion status
-  for (const bottle of newBottles) {
-    bottle.isCompleted =
-      bottle.layers.length === bottle.capacity &&
-      bottle.layers.length > 0 &&
-      bottle.layers.every(l => l.color === bottle.layers[0].color);
-  }
-
-  return newBottles;
-}
-
-/** Number of consecutive same-color layers at the top of the bottle. */
-function getTopRunLength(bottle: BottleData): number {
-  if (bottle.layers.length === 0) return 0;
-  const topColor = bottle.layers[bottle.layers.length - 1].color;
-  let count = 0;
-  for (let i = bottle.layers.length - 1; i >= 0 && bottle.layers[i].color === topColor; i--) count++;
-  return count;
+  return result;
 }
 
 /**
- * Checks if taking the top layer from `bottle` is a valid "Reverse Move".
- * Valid if the bottle is "pure" at the top (removing top doesn't expose a mismatch).
- * This guarantees that in the forward game, putting the layer BACK is a valid move.
+ * Distribute color layers into bottles with the HARD CONSTRAINT:
+ * no two adjacent layers in any bottle may share the same color.
+ * Returns null if distribution failed (caller should retry with a new shuffle).
  */
-const isValidScrambleSource = (bottle: BottleData): boolean => {
-  if (bottle.layers.length === 0) return false;
-  // If only 1 layer, removing it leaves empty. Valid forward target.
-  if (bottle.layers.length === 1) return true;
+function distributeWithoutAdjacency(
+  allColors: Color[],
+  numActiveBottles: number,
+  capacity: number
+): Color[][] | null {
+  const shuffled = shuffleArray(allColors);
+  const bottles: Color[][] = Array.from({ length: numActiveBottles }, () => []);
 
-  const top = bottle.layers[bottle.layers.length - 1];
-  const below = bottle.layers[bottle.layers.length - 2];
+  for (const color of shuffled) {
+    // Find all bottles where this color can be legally placed
+    const candidates: number[] = [];
+    for (let i = 0; i < bottles.length; i++) {
+      if (bottles[i].length >= capacity) continue;
+      if (bottles[i].length > 0 && bottles[i][bottles[i].length - 1] === color) continue;
+      candidates.push(i);
+    }
 
-  // If top color matches below color, removing top leaves a matching color. Valid forward target.
-  return top.color === below.color;
-};
+    if (candidates.length === 0) return null;
+
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    bottles[chosen].push(color);
+  }
+
+  return bottles;
+}
+
+function getDifficultyBand(level: number): { min: number; max: number } {
+  if (level <= 2) return { min: 4, max: 10 };
+  if (level <= 5) return { min: 8, max: 15 };
+  if (level <= 10) return { min: 14, max: 25 };
+  if (level <= 20) return { min: 20, max: 35 };
+  return { min: 30, max: 50 };
+}
 
 /**
- * Get the maximum allowed run length based on level.
- * Lower levels allow some mercy; higher levels demand perfection.
+ * Generates a new level using direct distribution.
+ * Guarantees: no same-color adjacency in any bottle.
  */
-function getMaxRunForLevel(level: number): number {
-  if (level <= 2) return 2; // Beginner: allow up to 2 consecutive
-  if (level <= 5) return 1; // Intermediate: no consecutive allowed (ideal)
-  return 1; // Hard: strict no consecutive
-}
-
-function countUniqueColorsInBottle(bottle: BottleData): number {
-  const set = new Set(bottle.layers.map(l => l.color));
-  return set.size;
-}
-
-function countMixedBottles(bottles: BottleData[]): number {
-  return bottles.filter(b => countUniqueColorsInBottle(b) >= 2).length;
-}
-
-function countPureOrEmptyBottles(bottles: BottleData[]): number {
-  return bottles.filter(b => countUniqueColorsInBottle(b) <= 1).length;
-}
-
-function getMoveBandForLevel(level: number): { min: number; max: number } {
-  if (level <= 3) return { min: 4, max: 12 };
-  if (level <= 6) return { min: 3, max: 10 };
-  if (level <= 10) return { min: 2, max: 8 };
-  return { min: 1, max: 6 };
-}
-
-function getReachableBandForLevel(level: number): { min: number; max: number } {
-  if (level <= 3) return { min: 1, max: 2 };
-  if (level <= 6) return { min: 0, max: 1 };
-  return { min: 0, max: 0 };
-}
-
-function scoreCandidate(params: {
-  fragScore: number;
-  badRuns: number;
-  validMoves: number;
-  mixedBottles: number;
-  pureOrEmptyBottles: number;
-  reachableNew: number;
-  level: number;
-  numColors: number;
-}): number {
-  const moveBand = getMoveBandForLevel(params.level);
-  const reachBand = getReachableBandForLevel(params.level);
-  const targetMixedMin = Math.max(2, Math.floor(params.numColors * 0.7));
-
-  let score = 0;
-  score += params.fragScore;
-  score -= params.badRuns * 20;
-
-  if (params.validMoves >= moveBand.min && params.validMoves <= moveBand.max) {
-    score += 40;
-  } else {
-    const diff = params.validMoves < moveBand.min
-      ? moveBand.min - params.validMoves
-      : params.validMoves - moveBand.max;
-    score -= diff * 15;
-  }
-
-  if (params.reachableNew >= reachBand.min && params.reachableNew <= reachBand.max) {
-    score += 30;
-  } else {
-    const diff = params.reachableNew < reachBand.min
-      ? reachBand.min - params.reachableNew
-      : params.reachableNew - reachBand.max;
-    score -= diff * 25;
-  }
-
-  if (params.mixedBottles >= targetMixedMin) {
-    score += 25;
-  } else {
-    score -= (targetMixedMin - params.mixedBottles) * 10;
-  }
-
-  const maxPureAllowed = Math.max(2, params.numColors - 2);
-  if (params.pureOrEmptyBottles <= maxPureAllowed) {
-    score += 15;
-  } else {
-    score -= (params.pureOrEmptyBottles - maxPureAllowed) * 10;
-  }
-
-  return score;
-}
-
 export const generateLevel = (level: number): { bottles: BottleData[], orders: Order[] } => {
-  // 1. Difficulty Config - ENHANCED
+  // 1. Configuration
   let numColors = 3;
   if (level >= 3) numColors = 4;
-  if (level >= 6) numColors = 5;
-  if (level >= 10) numColors = 6;
-  if (level >= 15) numColors = 7;
+  if (level >= 7) numColors = 5;
+  if (level >= 12) numColors = 6;
+  if (level >= 18) numColors = 7;
   numColors = Math.min(numColors, LEVEL_COLORS.length);
 
   let extraBottles = 2;
-  if (level >= 4) extraBottles = 1;
-
-  // MUCH higher scramble steps for later levels
-  const baseScramble = 40;
-  const perLevelScramble = 12;
-  const maxScrambleSteps = baseScramble + (level * perLevelScramble);
+  if (level >= 5 && level < 12) extraBottles = 1;
+  else if (level >= 12) extraBottles = 2;
 
   const capacity = getCapacityForLevel(level);
-  const depthTarget = getMaxOrdersTargetForLevel(level);
-  const maxRunAllowed = getMaxRunForLevel(level);
+  const activeColors = LEVEL_COLORS.slice(0, numColors);
 
   let hiddenProbability = 0;
-  if (level > 1) {
-    hiddenProbability = Math.min(0.85, 0.30 + (level - 1) * 0.05);
+  if (level > 2) {
+    hiddenProbability = Math.min(0.8, 0.2 + (level - 2) * 0.05);
   }
 
-  // Retry logic: try multiple times to get a good scramble
-  const MAX_GENERATION_ATTEMPTS = 9;
+  const band = getDifficultyBand(level);
+  const maxAttempts = 40;
+
   let bestBottles: BottleData[] | null = null;
+  let bestOrders: Order[] | null = null;
   let bestScore = -Infinity;
-  let activeColors: Color[] = [];
 
-  for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
-    const solvedState = createSolvedState(numColors, extraBottles, capacity);
-    let bottles = solvedState.bottles;
-    activeColors = solvedState.activeColors;
-
-    // 3. Random Walk Scramble - ENHANCED with stricter run control
-    let lastSourceId: string | null = null;
-    let stepsDone = 0;
-
-    for (let i = 0; i < maxScrambleSteps; i++) {
-      const preferredMoves: { sourceIndex: number, targetIndex: number }[] = [];
-      const fallbackMoves: { sourceIndex: number, targetIndex: number }[] = [];
-
-      bottles.forEach((source, sIdx) => {
-        if (!isValidScrambleSource(source)) return;
-        const sourceTopColor = source.layers[source.layers.length - 1].color;
-
-        bottles.forEach((target, tIdx) => {
-          if (sIdx === tIdx) return;
-          if (target.layers.length >= target.capacity) return;
-          // Stronger avoidance of back-and-forth
-          if (lastSourceId && source.id === lastSourceId && Math.random() < 0.9) return;
-
-          const targetTopColor = target.layers.length > 0 ? target.layers[target.layers.length - 1].color : null;
-          const isDifferentColor = targetTopColor === null || targetTopColor !== sourceTopColor;
-          const topRunAfter = isDifferentColor ? 1 : getTopRunLength(target) + 1;
-
-          // STRICT: prefer different colors, heavily penalize same color stacking
-          if (isDifferentColor) {
-            preferredMoves.push({ sourceIndex: sIdx, targetIndex: tIdx });
-          } else if (topRunAfter <= maxRunAllowed) {
-            // Only allow same-color stacking if within limit
-            fallbackMoves.push({ sourceIndex: sIdx, targetIndex: tIdx });
-          }
-        });
-      });
-
-      // PREFER moves that create fragmentation
-      const validMoves = preferredMoves.length > 0 ? preferredMoves : fallbackMoves;
-      if (validMoves.length === 0) break;
-
-      const move = validMoves[Math.floor(Math.random() * validMoves.length)];
-      const source = bottles[move.sourceIndex];
-      const target = bottles[move.targetIndex];
-
-      const layer = source.layers.pop()!;
-      target.layers.push(layer);
-      source.isCompleted = false;
-      target.isCompleted =
-        target.layers.length === target.capacity &&
-        target.layers.every(l => l.color === target.layers[0].color);
-      lastSourceId = target.id;
-      stepsDone++;
-
-      // Depth check: ensure "max orders completable in 8 steps" meets target for this level
-      if (stepsDone >= MIN_SCRAMBLE_STEPS && stepsDone % DEPTH_CHECK_INTERVAL === 0) {
-        const tempOrders = buildOrdersFromBottles(bottles, activeColors);
-        const maxOrdersInWindow = localBFSMaxOrdersCompleted(bottles, tempOrders, BFS_MAX_DEPTH);
-        const currentCompleted = tempOrders.filter(o => o.isCompleted).length;
-        const reachableNew = maxOrdersInWindow - currentCompleted;
-        if (reachableNew <= depthTarget) break;
-      }
-    }
-
-    // Post-scramble: check fragmentation quality
-    const badRuns = countBadRuns(bottles, maxRunAllowed);
-
-    // If too many bad runs, try redistribution
-    if (badRuns > 2) {
-      bottles = redistributeForFragmentation(bottles);
-    }
-
-    const fragScore = calculateFragmentationScore(bottles);
-    const tempOrders = buildOrdersFromBottles(bottles, activeColors);
-    const maxOrdersInWindow = localBFSMaxOrdersCompleted(bottles, tempOrders, BFS_MAX_DEPTH);
-    const currentCompleted = tempOrders.filter(o => o.isCompleted).length;
-    const reachableNew = maxOrdersInWindow - currentCompleted;
-    const validMoves = getValidMoves(bottles).length;
-    const mixedBottles = countMixedBottles(bottles);
-    const pureOrEmptyBottles = countPureOrEmptyBottles(bottles);
-
-    const finalScore = scoreCandidate({
-      fragScore,
-      badRuns: countBadRuns(bottles, maxRunAllowed),
-      validMoves,
-      mixedBottles,
-      pureOrEmptyBottles,
-      reachableNew,
-      level,
-      numColors,
-    });
-
-    if (finalScore > bestScore) {
-      bestScore = finalScore;
-      bestBottles = bottles;
-    }
-
-    const moveBand = getMoveBandForLevel(level);
-    const reachBand = getReachableBandForLevel(level);
-
-    const inMoveBand = validMoves >= moveBand.min && validMoves <= moveBand.max;
-    const inReachBand = reachableNew >= reachBand.min && reachableNew <= reachBand.max;
-    const inRunBand = countBadRuns(bottles, maxRunAllowed) === 0;
-    const inMixedBand = mixedBottles >= Math.max(2, Math.floor(numColors * 0.7));
-
-    if (inMoveBand && inReachBand && inRunBand && inMixedBand) {
-      break;
+  // Build color pool: `capacity` layers of each active color
+  const colorPool: Color[] = [];
+  for (const color of activeColors) {
+    for (let i = 0; i < capacity; i++) {
+      colorPool.push(color);
     }
   }
 
-  let bottles = bestBottles || createSolvedState(numColors, extraBottles, capacity).bottles;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // 2. Distribute colors with no same-color adjacency
+    const distribution = distributeWithoutAdjacency(colorPool, numColors, capacity);
+    if (!distribution) continue;
 
-  // 4. Post-Process
-  // Apply hidden only at color boundaries (layer different from the one above).
-  // This avoids trivial "same color as visible neighbor" hints and makes ? actually ambiguous.
-  bottles.forEach(b => {
-    b.layers.forEach((l, idx) => {
-      if (idx === b.layers.length - 1) {
-        l.isHidden = false;
-        return;
-      }
-      const layerAbove = b.layers[idx + 1];
-      const isAtBoundary = l.color !== layerAbove.color;
-      if (isAtBoundary && Math.random() < hiddenProbability) {
-        l.isHidden = true;
-      } else {
-        l.isHidden = false;
-      }
+    // 3. Build BottleData array
+    const bottles: BottleData[] = [];
+    for (let i = 0; i < numColors; i++) {
+      const layers = distribution[i].map(c => createLayer(c, false));
+      bottles.push({ id: uid(), layers, capacity, isCompleted: false });
+    }
+    for (let i = 0; i < extraBottles; i++) {
+      bottles.push({ id: uid(), layers: [], capacity, isCompleted: false });
+    }
+
+    // 4. Reject accidentally solved states
+    const isSolved = bottles.every(b => {
+      if (b.layers.length === 0) return true;
+      return b.layers.length === capacity && b.layers.every(l => l.color === b.layers[0].color);
+    });
+    if (isSolved) continue;
+
+    // 5. Apply hidden layers at color boundaries
+    bottles.forEach(b => {
+      b.layers.forEach((l, idx) => {
+        if (idx === b.layers.length - 1) {
+          l.isHidden = false;
+        } else {
+          const layerAbove = b.layers[idx + 1];
+          const isAtBoundary = l.color !== layerAbove.color;
+          l.isHidden = isAtBoundary && Math.random() < hiddenProbability;
+        }
+      });
     });
 
-    if (b.layers.length === b.capacity && b.layers.length > 0) {
-      const color = b.layers[0].color;
-      b.isCompleted = b.layers.every(l => l.color === color && !l.isHidden);
-    } else {
-      b.isCompleted = false;
+    // 6. Verify solvability and assess difficulty
+    const orders = buildOrdersFromBottles(bottles, activeColors);
+    const solveResult = findShortestPath(bottles, orders);
+
+    if (solveResult.isSolvable) {
+      const steps = solveResult.steps;
+      if (steps >= band.min && steps <= band.max) {
+        return { bottles, orders }; // Perfect difficulty match
+      }
+      if (steps > bestScore) {
+        bestScore = steps;
+        bestBottles = cloneBottles(bottles);
+        bestOrders = cloneOrders(orders);
+      }
+    } else if (solveResult.steps === -1) {
+      // Solver timed out — with extra bottles, very likely solvable.
+      // Use fragmentation as difficulty proxy.
+      const fragScore = calculateFragmentationScore(bottles);
+      if (fragScore > bestScore || !bestBottles) {
+        bestScore = fragScore;
+        bestBottles = cloneBottles(bottles);
+        bestOrders = cloneOrders(orders);
+      }
     }
-  });
+  }
 
-  // Create Orders based on active colors
-  const orders: Order[] = activeColors.map((color, index) => ({
-    id: uid(),
-    color: color,
-    // If the RNG accidentally left a bottle solved, mark order as done
-    isCompleted: bottles.some(b => b.isCompleted && b.layers[0].color === color),
-    isLocked: index >= 2
-  }));
+  // Return the best candidate found
+  if (bestBottles && bestOrders) {
+    return { bottles: bestBottles, orders: bestOrders };
+  }
 
-  return { bottles, orders };
+  // Absolute fallback: simple random shuffle
+  const fallbackBottles: BottleData[] = [];
+  const shuffledPool = shuffleArray(colorPool);
+  let poolIdx = 0;
+  for (let b = 0; b < numColors; b++) {
+    const layers: Layer[] = [];
+    for (let l = 0; l < capacity; l++) {
+      layers.push(createLayer(shuffledPool[poolIdx++]));
+    }
+    fallbackBottles.push({ id: uid(), layers, capacity, isCompleted: false });
+  }
+  for (let i = 0; i < extraBottles; i++) {
+    fallbackBottles.push({ id: uid(), layers: [], capacity, isCompleted: false });
+  }
+  return { bottles: fallbackBottles, orders: buildOrdersFromBottles(fallbackBottles, activeColors) };
 };
+
 
 export const checkLevelComplete = (bottles: BottleData[], orders: Order[]) => {
   return orders.every(o => o.isCompleted);

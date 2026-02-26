@@ -40,8 +40,9 @@ export interface GameState {
   bottles: BottleData[];
   orders: Order[]; // Replaces completedBottles. Tracks customer requests.
   selectedBottleId: string | null;
-  history: { bottles: BottleData[], orders: Order[] }[]; // Update history structure
+  history: { bottles: BottleData[], orders: Order[] }[];
   isWin: boolean;
+  initialBoardState?: { bottles: BottleData[], orders: Order[] }; // To allow consistent restarts
 }
 
 // --- NEW: Daily Mission Types ---

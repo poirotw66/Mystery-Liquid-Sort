@@ -21,6 +21,7 @@ export const LEVEL_COLORS = [
   Color.YELLOW,
   Color.PURPLE,
   Color.ORANGE,
+  Color.CYAN,
 ];
 
 // Costs for powerups
