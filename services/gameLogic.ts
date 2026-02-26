@@ -200,7 +200,7 @@ export const getGameStateHash = (bottles: BottleData[]): string => {
     res += b.id + ':';
     for (let j = 0; j < b.layers.length; j++) {
       const l = b.layers[j];
-      res += l.color[1] + (l.isHidden ? 'h' : 'v'); // use abbreviation
+      res += l.color + (l.isHidden ? 'h' : 'v') + ',';
     }
     res += '|';
   }
