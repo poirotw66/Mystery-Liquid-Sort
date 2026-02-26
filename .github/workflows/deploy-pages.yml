@@ -36,6 +36,9 @@ jobs:
       - name: Build for GitHub Pages
         run: npm run build -- --base /Mystery-Liquid-Sort/
 
+      - name: Add 404.html for SPA fallback
+        run: cp dist/index.html dist/404.html
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
         with:
