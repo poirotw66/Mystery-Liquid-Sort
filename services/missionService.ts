@@ -108,3 +108,35 @@ export const updateMissionProgress = (
 export const hasUnclaimedRewards = (missions: DailyMission[]): boolean => {
   return missions.some(m => m.progress >= m.target && !m.isClaimed);
 };
+
+export type MissionClaimResult = {
+  missions: DailyMission[];
+  coins: number;
+  coinsDelta: number;
+  didClaim: boolean;
+};
+
+export const claimMissionReward = (
+  missions: DailyMission[],
+  missionId: string,
+  currentCoins: number
+): MissionClaimResult => {
+  let coinsDelta = 0;
+
+  const updated = missions.map(m => {
+    if (m.id === missionId && !m.isClaimed && m.progress >= m.target) {
+      coinsDelta += m.reward;
+      return { ...m, isClaimed: true };
+    }
+    return m;
+  });
+
+  saveDailyMissions(updated);
+
+  return {
+    missions: updated,
+    coins: currentCoins + coinsDelta,
+    coinsDelta,
+    didClaim: coinsDelta > 0,
+  };
+};

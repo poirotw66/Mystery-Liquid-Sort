@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { GameState, BottleData, GameMode, DailyMission, MissionType } from '../types';
+import { GameState, BottleData, GameMode } from '../types';
 import { INITIAL_COINS, getCapacityForLevel, COST_SHUFFLE, COST_REVEAL, COST_ADD_BOTTLE, COST_UNDO } from '../constants';
 import { generateLevel, canPour, pourLiquid, checkLevelComplete, shuffleBottles, revealHiddenLayers, checkDeadlock, checkStateRepetition } from '../services/gameLogic';
-import { loadDailyMissions, saveDailyMissions, updateMissionProgress, hasUnclaimedRewards } from '../services/missionService';
+import { loadCoins, saveCoins } from '../services/economyService';
+import { useDailyMissions } from '../hooks/useDailyMissions';
+import { useDailyMissionsModal } from '../hooks/useDailyMissionsModal';
 import { Bottle } from './Bottle';
 import { TopBar } from './TopBar';
 import { TargetArea } from './TargetArea';
@@ -35,7 +37,7 @@ export default function Game() {
             startLevel = initialDifficulty;
         }
 
-        const savedCoins = localStorage.getItem('mls_coins');
+        const savedCoins = loadCoins(INITIAL_COINS);
 
         const initialLevelState = generateLevel(startLevel);
         const isWin = checkLevelComplete(initialLevelState.bottles, initialLevelState.orders);
@@ -44,7 +46,7 @@ export default function Game() {
             mode: initialMode,
             level: startLevel,
             difficultyLabel: initialMode === 'quick_play' ? initialDifficultyLabel : undefined,
-            coins: savedCoins ? parseInt(savedCoins, 10) : INITIAL_COINS,
+            coins: savedCoins,
             bottles: initialLevelState.bottles,
             orders: initialLevelState.orders,
             initialBoardState: {
@@ -58,10 +60,11 @@ export default function Game() {
     });
 
     // --- Daily Missions State ---
-    const [missions, setMissions] = useState<DailyMission[]>(() => loadDailyMissions());
-    const [showMissionModal, setShowMissionModal] = useState(false);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
-    const hasNotifications = useMemo(() => hasUnclaimedRewards(missions), [missions]);
+    const { missions, hasNotifications, trackMissionProgress, claimMission } = useDailyMissions({
+        currentCoins: gameState.coins,
+    });
+    const { isOpen: isMissionModalOpen, open: openMissionModal, close: closeMissionModal } = useDailyMissionsModal();
 
     // Intelligent Warning System
     const [warningState, setWarningState] = useState<{ type: 'deadlock' | 'loop' | null, message: string }>({ type: null, message: '' });
@@ -76,7 +79,7 @@ export default function Game() {
 
     // Save coins whenever they change (shared across modes)
     useEffect(() => {
-        localStorage.setItem('mls_coins', gameState.coins.toString());
+        saveCoins(gameState.coins);
     }, [gameState.coins]);
 
     // Save level ONLY if in ADVENTURE mode
@@ -92,23 +95,11 @@ export default function Game() {
     // (Removed initial startLevel call as it's now done in useState initializer)
 
     // --- Helper to update missions from game events ---
-    const trackMissionProgress = (type: MissionType) => {
-        setMissions(prev => updateMissionProgress(prev, type));
-    };
-
     const handleClaimMission = (missionId: string) => {
-        setMissions(prev => {
-            const updated = prev.map(m => {
-                if (m.id === missionId && !m.isClaimed && m.progress >= m.target) {
-                    // Add coins
-                    setGameState(gs => ({ ...gs, coins: gs.coins + m.reward }));
-                    return { ...m, isClaimed: true };
-                }
-                return m;
-            });
-            saveDailyMissions(updated);
-            return updated;
-        });
+        const coinsDelta = claimMission(missionId);
+        if (coinsDelta > 0) {
+            setGameState(gs => ({ ...gs, coins: gs.coins + coinsDelta }));
+        }
     };
 
     // --- CALCULATE VALID TARGETS ---
@@ -508,7 +499,7 @@ export default function Game() {
                             <RotateCcw size={18} className="md:w-5 md:h-5" />
                         </button>
                         <button
-                            onClick={() => setShowMissionModal(true)}
+                            onClick={openMissionModal}
                             className="touch-target w-10 h-10 md:w-11 md:h-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg border border-white/20 relative touch-active"
                             aria-label="Daily Missions"
                         >
@@ -576,8 +567,8 @@ export default function Game() {
 
             {/* --- MODALS --- */}
             <DailyMissions
-                isOpen={showMissionModal}
-                onClose={() => setShowMissionModal(false)}
+                isOpen={isMissionModalOpen}
+                onClose={closeMissionModal}
                 missions={missions}
                 onClaim={handleClaimMission}
             />

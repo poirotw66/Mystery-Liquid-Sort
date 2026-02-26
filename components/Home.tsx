@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Play, Zap, X, Trophy, Map, Star, ClipboardList, Heart } from 'lucide-react';
 import { Bottle } from './Bottle';
 import { Background } from './Background';
-import { BottleData, Color, DailyMission } from '../types';
+import { BottleData, Color } from '../types';
 import { createLayer } from '../services/gameLogic';
-import { loadDailyMissions, saveDailyMissions, hasUnclaimedRewards } from '../services/missionService';
+import { loadCoins, saveCoins } from '../services/economyService';
+import { useDailyMissions } from '../hooks/useDailyMissions';
+import { useDailyMissionsModal } from '../hooks/useDailyMissionsModal';
 import { getSavedBackground } from '../utils/backgrounds';
 import { DailyMissions } from './DailyMissions';
 import { INITIAL_COINS } from '../constants';
@@ -14,34 +16,19 @@ export const Home: React.FC = () => {
   const navigate = useNavigate();
   const [showDifficultyModal, setShowDifficultyModal] = useState(false);
 
-  // --- Missions & Coins State ---
-  const [missions, setMissions] = useState<DailyMission[]>(() => loadDailyMissions());
-  const [showMissionModal, setShowMissionModal] = useState(false);
-  const [coins, setCoins] = useState<number>(() => {
-      const saved = localStorage.getItem('mls_coins');
-      return saved ? parseInt(saved, 10) : INITIAL_COINS;
-  });
+    // --- Missions & Coins State ---
+    const [coins, setCoins] = useState<number>(() => loadCoins(INITIAL_COINS));
+    const { missions, hasNotifications, claimMission } = useDailyMissions({ currentCoins: coins });
+    const { isOpen: isMissionModalOpen, open: openMissionModal, close: closeMissionModal } = useDailyMissionsModal();
 
-  const hasNotifications = useMemo(() => hasUnclaimedRewards(missions), [missions]);
-
-  // Handle claiming missions directly from Home
-  const handleClaimMission = (missionId: string) => {
-      setMissions(prev => {
-          const updated = prev.map(m => {
-              if (m.id === missionId && !m.isClaimed && m.progress >= m.target) {
-                  // Update Coins locally and in storage
-                  const newCoins = coins + m.reward;
-                  setCoins(newCoins);
-                  localStorage.setItem('mls_coins', newCoins.toString());
-                  
-                  return { ...m, isClaimed: true };
-              }
-              return m;
-          });
-          saveDailyMissions(updated);
-          return updated;
-      });
-  };
+    const handleClaimMission = (missionId: string) => {
+        const coinsDelta = claimMission(missionId);
+        if (coinsDelta > 0) {
+            const newCoins = coins + coinsDelta;
+            setCoins(newCoins);
+            saveCoins(newCoins);
+        }
+    };
 
   // Get saved level for "Continue" text
   const savedLevel = parseInt(localStorage.getItem('mls_level') || '1', 10);
@@ -112,7 +99,7 @@ export const Home: React.FC = () => {
 
               {/* Missions Button */}
               <button 
-                  onClick={() => setShowMissionModal(true)}
+                  onClick={openMissionModal}
                   className="touch-target w-11 h-11 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg border border-white/20 relative active:scale-95 transition-transform animate-fade-in-down touch-active"
                   style={{ animationDelay: '0.1s' }}
                   aria-label="Daily Missions"
@@ -200,8 +187,8 @@ export const Home: React.FC = () => {
         
         {/* Daily Missions Modal */}
         <DailyMissions 
-            isOpen={showMissionModal}
-            onClose={() => setShowMissionModal(false)}
+            isOpen={isMissionModalOpen}
+            onClose={closeMissionModal}
             missions={missions}
             onClaim={handleClaimMission}
         />
