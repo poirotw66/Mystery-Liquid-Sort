@@ -662,6 +662,84 @@ function getMaxRunForLevel(level: number): number {
   return 1; // Hard: strict no consecutive
 }
 
+function countUniqueColorsInBottle(bottle: BottleData): number {
+  const set = new Set(bottle.layers.map(l => l.color));
+  return set.size;
+}
+
+function countMixedBottles(bottles: BottleData[]): number {
+  return bottles.filter(b => countUniqueColorsInBottle(b) >= 2).length;
+}
+
+function countPureOrEmptyBottles(bottles: BottleData[]): number {
+  return bottles.filter(b => countUniqueColorsInBottle(b) <= 1).length;
+}
+
+function getMoveBandForLevel(level: number): { min: number; max: number } {
+  if (level <= 3) return { min: 4, max: 12 };
+  if (level <= 6) return { min: 3, max: 10 };
+  if (level <= 10) return { min: 2, max: 8 };
+  return { min: 1, max: 6 };
+}
+
+function getReachableBandForLevel(level: number): { min: number; max: number } {
+  if (level <= 3) return { min: 1, max: 2 };
+  if (level <= 6) return { min: 0, max: 1 };
+  return { min: 0, max: 0 };
+}
+
+function scoreCandidate(params: {
+  fragScore: number;
+  badRuns: number;
+  validMoves: number;
+  mixedBottles: number;
+  pureOrEmptyBottles: number;
+  reachableNew: number;
+  level: number;
+  numColors: number;
+}): number {
+  const moveBand = getMoveBandForLevel(params.level);
+  const reachBand = getReachableBandForLevel(params.level);
+  const targetMixedMin = Math.max(2, Math.floor(params.numColors * 0.7));
+
+  let score = 0;
+  score += params.fragScore;
+  score -= params.badRuns * 20;
+
+  if (params.validMoves >= moveBand.min && params.validMoves <= moveBand.max) {
+    score += 40;
+  } else {
+    const diff = params.validMoves < moveBand.min
+      ? moveBand.min - params.validMoves
+      : params.validMoves - moveBand.max;
+    score -= diff * 15;
+  }
+
+  if (params.reachableNew >= reachBand.min && params.reachableNew <= reachBand.max) {
+    score += 30;
+  } else {
+    const diff = params.reachableNew < reachBand.min
+      ? reachBand.min - params.reachableNew
+      : params.reachableNew - reachBand.max;
+    score -= diff * 25;
+  }
+
+  if (params.mixedBottles >= targetMixedMin) {
+    score += 25;
+  } else {
+    score -= (targetMixedMin - params.mixedBottles) * 10;
+  }
+
+  const maxPureAllowed = Math.max(2, params.numColors - 2);
+  if (params.pureOrEmptyBottles <= maxPureAllowed) {
+    score += 15;
+  } else {
+    score -= (params.pureOrEmptyBottles - maxPureAllowed) * 10;
+  }
+
+  return score;
+}
+
 export const generateLevel = (level: number): { bottles: BottleData[], orders: Order[] } => {
   // 1. Difficulty Config - ENHANCED
   let numColors = 3;
@@ -689,7 +767,7 @@ export const generateLevel = (level: number): { bottles: BottleData[], orders: O
   }
 
   // Retry logic: try multiple times to get a good scramble
-  const MAX_GENERATION_ATTEMPTS = 5;
+  const MAX_GENERATION_ATTEMPTS = 9;
   let bestBottles: BottleData[] | null = null;
   let bestScore = -Infinity;
   let activeColors: Color[] = [];
@@ -760,21 +838,46 @@ export const generateLevel = (level: number): { bottles: BottleData[], orders: O
 
     // Post-scramble: check fragmentation quality
     const badRuns = countBadRuns(bottles, maxRunAllowed);
-    const fragScore = calculateFragmentationScore(bottles);
 
     // If too many bad runs, try redistribution
     if (badRuns > 2) {
       bottles = redistributeForFragmentation(bottles);
     }
 
-    const finalScore = calculateFragmentationScore(bottles);
+    const fragScore = calculateFragmentationScore(bottles);
+    const tempOrders = buildOrdersFromBottles(bottles, activeColors);
+    const maxOrdersInWindow = localBFSMaxOrdersCompleted(bottles, tempOrders, BFS_MAX_DEPTH);
+    const currentCompleted = tempOrders.filter(o => o.isCompleted).length;
+    const reachableNew = maxOrdersInWindow - currentCompleted;
+    const validMoves = getValidMoves(bottles).length;
+    const mixedBottles = countMixedBottles(bottles);
+    const pureOrEmptyBottles = countPureOrEmptyBottles(bottles);
+
+    const finalScore = scoreCandidate({
+      fragScore,
+      badRuns: countBadRuns(bottles, maxRunAllowed),
+      validMoves,
+      mixedBottles,
+      pureOrEmptyBottles,
+      reachableNew,
+      level,
+      numColors,
+    });
+
     if (finalScore > bestScore) {
       bestScore = finalScore;
       bestBottles = bottles;
     }
 
-    // If we have a good enough score, stop early
-    if (countBadRuns(bottles, maxRunAllowed) === 0 && finalScore > 0) {
+    const moveBand = getMoveBandForLevel(level);
+    const reachBand = getReachableBandForLevel(level);
+
+    const inMoveBand = validMoves >= moveBand.min && validMoves <= moveBand.max;
+    const inReachBand = reachableNew >= reachBand.min && reachableNew <= reachBand.max;
+    const inRunBand = countBadRuns(bottles, maxRunAllowed) === 0;
+    const inMixedBand = mixedBottles >= Math.max(2, Math.floor(numColors * 0.7));
+
+    if (inMoveBand && inReachBand && inRunBand && inMixedBand) {
       break;
     }
   }
