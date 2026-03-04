@@ -4,7 +4,10 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
+    // BASE_URL set by Clubhouse-Games build:game / build:pages; else relative for Capacitor/standalone
+    const base = process.env.BASE_URL ?? './';
     return {
+      base,
       server: {
         port: 3000,
         host: '0.0.0.0',
@@ -22,8 +25,6 @@ export default defineConfig(({ mode }) => {
       build: {
         outDir: 'dist',
         assetsDir: 'assets',
-        // 確保資源路徑正確，使用相對路徑以支援 Capacitor
-        base: './'
       }
     };
 });
